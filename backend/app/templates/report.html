@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+{% block title %}DFM Report — {{ r.part_name }}{% endblock %}
+{% block content %}
+<div class="no-print mb-4 flex items-center justify-between">
+  <a href="/" class="text-sm text-slate-300 hover:text-white">&larr; New check</a>
+  <div class="flex items-center gap-2">
+    {% if r.family == 'stamping' %}
+    <a href="/strip?family=stamping{% if r.model_file %}&model={{ r.model_file }}{% endif %}"
+       class="text-sm px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-500 shadow-lg shadow-brand-600/30">
+      Generate strip layout
+    </a>
+    {% endif %}
+    <button onclick="window.print()" class="text-sm px-4 py-2 border border-white/15 text-slate-200 rounded-lg hover:bg-white/5">
+      Print / Save PDF
+    </button>
+  </div>
+</div>
+
+{% if r.model_file %}
+<section class="no-print bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-semibold text-slate-800">3D part &mdash; DFM concerns</h2>
+    <span id="dfm-status" class="text-xs text-slate-400">Initializing viewer&hellip;</span>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+    <div id="dfm-viewer" data-model-url="/api/model/{{ r.model_file }}"
+         class="lg:col-span-3 relative rounded-lg overflow-hidden border border-slate-200 bg-slate-100"
+         style="height:460px;"></div>
+    <aside class="lg:col-span-1">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Concerns</h3>
+      <ul id="dfm-concerns" class="space-y-1.5 text-sm overflow-y-auto" style="max-height:420px;"></ul>
+      <p class="text-[11px] text-slate-400 mt-3 leading-snug">
+        Drag to orbit, scroll to zoom, hover a face to inspect. Failed/at-risk areas are
+        pinned with colored markers on the part; click a concern to zoom to its marker.
+        Concerns without a precise location pulse the whole part.
+      </p>
+    </aside>
+  </div>
+  <script id="dfm-results" type="application/json">{{ r.summary.results | tojson }}</script>
+  <script id="dfm-markers" type="application/json">{{ r.markers | tojson }}</script>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="/static/viewer.js"></script>
+{% endif %}
+
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 print:shadow-none print:border-0">
+  <div class="flex flex-wrap items-start justify-between gap-6 border-b border-slate-100 pb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-slate-900">DFM Readiness Report</h1>
+      <p class="text-slate-600 mt-1">{{ r.part_name }} &middot; {{ r.family }}</p>
+      <p class="text-xs text-slate-400 mt-1">
+        Ruleset {{ r.ruleset_version }} &middot; {{ r.generated_at }}
+        {% if r.family_auto_detected %}(family auto-detected){% endif %}
+      </p>
+    </div>
+    {% if r.summary.readiness_score is not none %}
+    <div class="text-right">
+      <div class="text-5xl font-bold text-slate-900">{{ r.summary.readiness_score }}%</div>
+      <div class="text-sm text-slate-500">readiness score</div>
+      <div class="text-xs text-slate-400 mt-1">
+        pass {{ r.summary.counts.pass }} &middot;
+        flag {{ r.summary.counts.flag }} &middot;
+        fail {{ r.summary.counts.fail }} &middot;
+        manual {{ r.summary.counts.manual }}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if r.geometry %}
+  <section class="mt-6 rounded-lg bg-slate-50 border border-slate-100 p-4 text-sm">
+    <h2 class="font-semibold text-slate-800 mb-2">Extracted geometry (STEP)</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-slate-700">
+      <div>Vertices parsed: <span class="font-mono">{{ r.geometry.point_count }}</span></div>
+      {% if r.geometry.stock_thickness_mm is not none %}
+      <div>Stock thickness (min extent): <span class="font-mono">{{ r.geometry.stock_thickness_mm }}</span> mm</div>
+      {% endif %}
+      {% if r.geometry.dimensions_mm %}
+      <div>Bounding box: <span class="font-mono">{{ "%.2f"|format(r.geometry.dimensions_mm[0]) }} &times; {{ "%.2f"|format(r.geometry.dimensions_mm[1]) }} &times; {{ "%.2f"|format(r.geometry.dimensions_mm[2]) }}</span> mm</div>
+      {% endif %}
+    </div>
+    {% if r.material and r.material.thickness_mm is not none and r.geometry.stock_thickness_mm is not none %}
+    <p class="mt-2 text-xs text-slate-500">
+      Drawing stock spec: {{ r.material.thickness_mm }} &plusmn;{{ r.material.thickness_tol_mm or 0 }} mm
+      {% set delta = (r.geometry.stock_thickness_mm - r.material.thickness_mm)|abs %}
+      {% if delta <= (r.material.thickness_tol_mm or 0.005) %}
+      — measured thickness within spec band.
+      {% else %}
+      — <span class="text-amber-700">measured thickness differs from drawing spec; verify orientation/units.</span>
+      {% endif %}
+    </p>
+    {% endif %}
+    {% for w in r.geometry.warnings %}
+    <p class="mt-1 text-xs text-amber-700">{{ w }}</p>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if r.thickness %}
+  {% set ustatus = r.thickness.uniformity_status %}
+  <section class="mt-6 rounded-lg border p-4 text-sm
+      {% if ustatus == 'anomalies' %}border-red-200 bg-red-50
+      {% elif ustatus == 'inconclusive' %}border-slate-200 bg-slate-50
+      {% else %}border-emerald-200 bg-emerald-50{% endif %}">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 class="font-semibold text-slate-800">Material thickness &mdash; derived from 3D model</h2>
+        <p class="text-slate-600 mt-1">
+          Expected stock gauge
+          <span class="font-mono font-semibold">{{ r.thickness.expected_thickness_mm }}</span> mm
+          <span class="text-xs text-slate-500">(from {{ r.thickness.gauge_source }})</span>
+        </p>
+        <p class="text-xs text-slate-500 mt-1">
+          Used for this DFM run: <span class="font-mono">{{ r.material_thickness_used_mm }}</span> mm
+          &middot; source: {{ r.material_thickness_source }}.
+          {% if r.thickness.bend_gauge_mm %}Bend gauge {{ r.thickness.bend_gauge_mm }} mm
+          ({{ r.thickness.bend_sample_count }} bends).{% endif %}
+        </p>
+        <p class="text-xs text-slate-500 mt-1">
+          Measured wall range
+          <span class="font-mono">{{ r.thickness.thickness_min_mm }}</span>&ndash;<span class="font-mono">{{ r.thickness.thickness_max_mm }}</span> mm
+          across {{ r.thickness.wall_sample_count }} walls &middot; off-gauge above
+          <span class="font-mono">{{ r.thickness.off_gauge_threshold_mm }}</span> mm.
+        </p>
+      </div>
+      <div class="text-right">
+        {% if ustatus == 'anomalies' %}
+        <span class="inline-block px-2.5 py-1 rounded text-xs font-semibold uppercase bg-red-100 text-red-800">Inconsistent thickness</span>
+        <div class="text-xs text-red-700 mt-1">max deviation {{ r.thickness.max_deviation_mm }} mm</div>
+        {% elif ustatus == 'inconclusive' %}
+        <span class="inline-block px-2.5 py-1 rounded text-xs font-semibold uppercase bg-slate-200 text-slate-700">Uniformity inconclusive</span>
+        {% else %}
+        <span class="inline-block px-2.5 py-1 rounded text-xs font-semibold uppercase bg-emerald-100 text-emerald-800">Uniform gauge</span>
+        {% endif %}
+      </div>
+    </div>
+    {% if ustatus == 'inconclusive' %}
+    <p class="text-[11px] text-slate-500 mt-3 leading-snug">
+      Gauge is shown for reference only. This part's geometry is feature-rich (or not
+      single-gauge sheet stock): {{ r.thickness.candidate_region_count }} candidate off-gauge
+      regions across {{ r.thickness.wall_sample_count }} walls
+      ({{ (r.thickness.off_gauge_ratio * 100) | round(0) }}% off-gauge), so per-region
+      thickness reads features rather than a stock anomaly. No gauge anomalies are flagged here;
+      confirm thickness against the drawing/material spec.
+    </p>
+    {% endif %}
+    {% if ustatus == 'anomalies' %}
+    <div class="mt-3">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-red-700">Non-uniform wall regions</h3>
+      <table class="mt-2 min-w-full text-sm">
+        <thead class="text-left text-xs text-slate-500">
+          <tr><th class="py-1 pr-4">Measured wall</th><th class="py-1 pr-4">Deviation</th><th class="py-1">Location (x, y, z) mm</th></tr>
+        </thead>
+        <tbody>
+          {% for reg in r.thickness.inconsistencies %}
+          <tr class="border-t border-red-100">
+            <td class="py-1 pr-4 font-mono text-red-800">{{ reg.thickness_mm }} mm</td>
+            <td class="py-1 pr-4 font-mono text-red-700">+{{ (reg.thickness_mm - r.thickness.expected_thickness_mm) | round(3) }} mm</td>
+            <td class="py-1 font-mono text-slate-600">({{ reg.location[0] }}, {{ reg.location[1] }}, {{ reg.location[2] }})</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="text-[11px] text-slate-500 mt-2">
+        Sheet stock is single-gauge; walls thicker than the derived gauge indicate added material,
+        a modeling error, or a non-uniform-stock condition. Confirm against the drawing/material spec.
+      </p>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if r.drawing and r.drawing.notes %}
+  <section class="mt-6">
+    <h2 class="font-semibold text-slate-800 mb-2">Drawing notes (preview)</h2>
+    <ul class="text-sm text-slate-600 space-y-1 max-h-40 overflow-y-auto">
+      {% for note in r.drawing.notes[:12] %}
+      <li>{{ note }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section class="mt-8 overflow-x-auto">
+    <table class="min-w-full text-sm border border-slate-200">
+      <thead class="bg-slate-800 text-white text-left">
+        <tr>
+          <th class="px-3 py-2 font-medium">Rule ID</th>
+          <th class="px-3 py-2 font-medium">Parameter</th>
+          <th class="px-3 py-2 font-medium">Measured</th>
+          <th class="px-3 py-2 font-medium">Limit</th>
+          <th class="px-3 py-2 font-medium">Verdict</th>
+          <th class="px-3 py-2 font-medium">Severity</th>
+          <th class="px-3 py-2 font-medium">Source</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for row in r.summary.results %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 font-mono text-xs">{{ row.rule_id }}</td>
+          <td class="px-3 py-2">{{ row.parameter }}</td>
+          <td class="px-3 py-2">
+            {% if row.measured is none %}
+            <span class="italic text-slate-400">needs manual check</span>
+            {% else %}
+            {{ row.measured }}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 font-mono text-xs">{{ row.limit_detail }}</td>
+          <td class="px-3 py-2">
+            {% if row.verdict == 'pass' %}
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase bg-emerald-100 text-emerald-800">pass</span>
+            {% elif row.verdict == 'flag' %}
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase bg-amber-100 text-amber-800">flag</span>
+            {% elif row.verdict == 'fail' %}
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase bg-red-100 text-red-800">fail</span>
+            {% else %}
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase bg-slate-100 text-slate-600">manual</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 capitalize">{{ row.severity }}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 max-w-xs">
+            {{ row.source }}
+            {% if row.seen_count and row.seen_count > 1 %}
+            <span class="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-100 text-sky-800" title="Corroborated across {{ row.seen_count }} reference DFMs">field-corroborated &times;{{ row.seen_count }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% if row.note %}
+        <tr class="bg-slate-50">
+          <td colspan="7" class="px-3 py-1 text-xs text-slate-500 pl-8">&mdash; {{ row.note }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if r.summary.manual_check_parameters %}
+  <section class="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <h2 class="font-semibold text-amber-900">Requires manual check</h2>
+    <p class="text-sm text-amber-800 mt-1">
+      These parameters could not be auto-measured from the uploaded files. An engineer must verify them before release.
+    </p>
+    <ul class="mt-2 text-sm text-amber-900 list-disc list-inside">
+      {% for p in r.summary.manual_check_parameters %}
+      <li><span class="font-mono">{{ p }}</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if r.summary.proposed %}
+  <section class="mt-6 rounded-lg border border-violet-200 bg-violet-50 p-4">
+    <h2 class="font-semibold text-violet-900">Proposed criteria &mdash; not enforced</h2>
+    <p class="text-sm text-violet-800 mt-1">
+      These rules were mined from reference DFMs but are awaiting engineering sign-off. They did
+      <strong>not</strong> affect the readiness score or any verdict above. Promote a rule by setting
+      <span class="font-mono">status: active</span> in the criteria file.
+    </p>
+    <div class="mt-3 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="text-left text-xs text-violet-700">
+          <tr>
+            <th class="py-1 pr-4">Rule ID</th>
+            <th class="py-1 pr-4">Parameter</th>
+            <th class="py-1 pr-4">Proposed limit</th>
+            <th class="py-1 pr-4">Severity</th>
+            <th class="py-1">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in r.summary.proposed %}
+          <tr class="border-t border-violet-100 align-top">
+            <td class="py-1 pr-4 font-mono text-xs text-violet-900">{{ p.rule_id }}</td>
+            <td class="py-1 pr-4">{{ p.parameter }}</td>
+            <td class="py-1 pr-4 font-mono text-xs">{{ p.operator }} {{ p.limit }}{% if p.units %} {{ p.units }}{% endif %}</td>
+            <td class="py-1 pr-4 capitalize">{{ p.severity }}</td>
+            <td class="py-1 text-xs text-violet-800 max-w-md">{{ p.source }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="mt-8 pt-6 border-t border-slate-200">
+    <h2 class="font-semibold text-slate-800">About &amp; version control</h2>
+    <p class="text-xs text-slate-500 mt-1">
+      Provenance for this report. Every verdict cites the rule id and drawing note it came from;
+      the criteria set is versioned, so results are reproducible against a known ruleset.
+    </p>
+    <dl class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+      <div class="rounded-lg border border-slate-200 px-3 py-2">
+        <dt class="text-[11px] uppercase tracking-wide text-slate-400">Application</dt>
+        <dd class="text-slate-800">{{ APP_NAME }} <span class="font-mono">v{{ APP_VERSION }}</span></dd>
+      </div>
+      <div class="rounded-lg border border-slate-200 px-3 py-2">
+        <dt class="text-[11px] uppercase tracking-wide text-slate-400">Ruleset version</dt>
+        <dd class="font-mono text-slate-800">{{ r.ruleset_version }}</dd>
+      </div>
+      <div class="rounded-lg border border-slate-200 px-3 py-2">
+        <dt class="text-[11px] uppercase tracking-wide text-slate-400">Criteria schema</dt>
+        <dd class="font-mono text-slate-800">{{ r.schema_version }}</dd>
+      </div>
+      <div class="rounded-lg border border-slate-200 px-3 py-2">
+        <dt class="text-[11px] uppercase tracking-wide text-slate-400">Generated (UTC)</dt>
+        <dd class="font-mono text-slate-800">{{ r.generated_at }}</dd>
+      </div>
+    </dl>
+  </section>
+</div>
+{% endblock %}
+{% block about_extra %}&middot; ruleset <span class="font-mono text-slate-400">{{ r.ruleset_version }}</span> &middot; schema <span class="font-mono text-slate-400">{{ r.schema_version }}</span>{% endblock %}

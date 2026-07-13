@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Local data / runtime artifacts
+uploads/
+*.sqlite
+*.sqlite3
+criteria/older_files/
+
+# Examples folder: allowlist only. Everything here is proprietary by default;
+# keep just the README and the non-proprietary synthetic stand-in. This is
+# robust against odd/misspelled extensions (e.g. a stray ",stp").
+examples/*
+!examples/README.md
+!examples/synthetic-sig-strip.stp
+
+# Proprietary / reference material — never publish
+reference_material/
+background_sample/
+new_suggestions/
+
+# CAD / document artifacts (proprietary by default)
+*.stp
+*.step
+*.STP
+*.STEP
+*.dwg
+*.DWG
+*.pptx
+*.eml
+*.hlg
+!examples/synthetic-sig-strip.stp
+
+# OS / editor
+.DS_Store
+Thumbs.db

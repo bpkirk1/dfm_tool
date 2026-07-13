@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}New DFM check{% endblock %}
+{% block content %}
+
+<!-- Hero -->
+<section class="grid grid-cols-1 md:grid-cols-[1fr_auto] items-center gap-8">
+  <div class="text-center md:text-left">
+    <div class="flex flex-col items-center md:items-start">
+      <span class="brand-eyebrow text-[11px] font-semibold text-slate-400">AMPHENOL</span>
+      <span class="mt-2 block h-px w-10 bg-brand-500/70"></span>
+    </div>
+    <h1 class="mt-5 text-4xl sm:text-5xl font-extrabold tracking-tight text-white">
+      Design-for-Manufacture, Verified
+    </h1>
+    <p class="mt-4 text-base text-slate-400 max-w-xl">
+      Immediate, automated DFM and design-criteria feedback on stamped and molded
+      connector components &mdash; from a 3D model, a 2D drawing, or both.
+    </p>
+  </div>
+  <div class="justify-self-center">
+    <img src="/static/amphenolian.png" alt="The Amphenolian"
+         class="w-44 sm:w-52 drop-shadow-[0_18px_40px_rgba(47,95,239,0.35)]" />
+  </div>
+</section>
+
+<!-- Run card -->
+<div class="mt-10 rounded-2xl border border-white/10 bg-ink-800/80 shadow-2xl shadow-black/40 backdrop-blur">
+  <div class="px-8 pt-8 pb-2">
+    <h2 class="text-lg font-semibold text-white">Run a DFM check</h2>
+    <p class="text-sm text-slate-400 mt-1">
+      Provide a 3D model, a 2D drawing, or both. Either file alone is enough to run.
+      Ruleset <span class="font-mono text-slate-300">{{ ruleset_version }}</span>.
+    </p>
+  </div>
+
+  <form id="dfm-form" action="/evaluate" method="post" enctype="multipart/form-data" class="px-8 pb-8 pt-4 space-y-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <label class="group cursor-pointer rounded-xl border border-white/10 bg-ink-750 p-4 hover:border-brand-500/60 transition-colors">
+        <div class="flex items-center gap-2 text-slate-200">
+          <span class="text-brand-500">&#9633;</span>
+          <span class="text-sm font-medium">3D model</span>
+          <span class="text-[11px] text-slate-500">STEP / .stp / .step</span>
+        </div>
+        <input type="file" name="step_file" accept=".stp,.step,.STP,.STEP"
+               class="dfm-file mt-3 block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600/90 file:px-3 file:py-1.5 file:text-white file:text-xs file:font-medium hover:file:bg-brand-600" />
+      </label>
+
+      <label class="group cursor-pointer rounded-xl border border-white/10 bg-ink-750 p-4 hover:border-brand-500/60 transition-colors">
+        <div class="flex items-center gap-2 text-slate-200">
+          <span class="text-brand-500">&#9636;</span>
+          <span class="text-sm font-medium">2D drawing</span>
+          <span class="text-[11px] text-slate-500">PDF</span>
+        </div>
+        <input type="file" name="pdf_file" accept="application/pdf,.pdf"
+               class="dfm-file mt-3 block w-full text-sm text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-brand-600/90 file:px-3 file:py-1.5 file:text-white file:text-xs file:font-medium hover:file:bg-brand-600" />
+      </label>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div>
+        <label class="block text-xs font-medium uppercase tracking-wide text-slate-400 mb-1.5">Process family</label>
+        <select name="family"
+                class="block w-full text-sm border border-white/10 rounded-lg p-2.5 bg-ink-750 text-slate-200 focus:border-brand-500 focus:ring-0">
+          <option value="">Auto-detect</option>
+          {% for fam in families %}<option value="{{ fam }}">{{ fam }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium uppercase tracking-wide text-slate-400 mb-1.5">Part name (optional)</label>
+        <input type="text" name="part_name" placeholder="e.g. P-233-1111-500"
+               class="block w-full text-sm border border-white/10 rounded-lg p-2.5 bg-ink-750 text-slate-200 placeholder-slate-500 focus:border-brand-500 focus:ring-0" />
+      </div>
+    </div>
+
+    <p id="dfm-error" class="hidden text-sm text-amber-400">
+      Add at least one file &mdash; a 3D model, a 2D drawing, or both.
+    </p>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="submit"
+              class="inline-flex items-center px-6 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-lg shadow-lg shadow-brand-600/30 hover:bg-brand-500 transition-colors">
+        Evaluate
+      </button>
+      <span class="text-xs text-slate-500">3D only &rarr; geometry checks &middot; 2D only &rarr; drawing-criteria checks</span>
+    </div>
+  </form>
+</div>
+
+<!-- Examples / shortcuts -->
+<div class="mt-6 rounded-2xl border border-white/10 bg-ink-850/60 px-8 py-6">
+  <h2 class="text-sm font-semibold text-slate-200">Acceptance fixtures</h2>
+  <p class="text-xs text-slate-500 mt-1">Requires example PDF + STEP files in <span class="font-mono">/examples</span>.</p>
+  <div class="mt-4 flex flex-wrap gap-3">
+    <form action="/evaluate/example/stamping" method="post">
+      <button type="submit" class="text-sm px-4 py-2 border border-white/15 text-slate-200 rounded-lg hover:bg-white/5 transition-colors">Run stamping example</button>
+    </form>
+    <form action="/evaluate/example/molding" method="post">
+      <button type="submit" class="text-sm px-4 py-2 border border-white/15 text-slate-200 rounded-lg hover:bg-white/5 transition-colors">Run molding example</button>
+    </form>
+    <a href="/strip?family=stamping"
+       class="text-sm px-4 py-2 border border-brand-500/40 text-brand-300 rounded-lg hover:bg-brand-600/10 transition-colors">
+      Stamping strip layout
+    </a>
+  </div>
+  <p class="text-[11px] text-slate-500 mt-3">
+    The strip layout reads pitch, multi-up, coining and the bend list from the criteria config.
+    Run it from a stamping report (via &ldquo;Generate strip layout&rdquo;) to include the model-based width estimate.
+  </p>
+</div>
+
+<script>
+  (function () {
+    var form = document.getElementById("dfm-form");
+    var err = document.getElementById("dfm-error");
+    form.addEventListener("submit", function (e) {
+      var files = form.querySelectorAll("input.dfm-file");
+      var hasFile = Array.prototype.some.call(files, function (f) { return f.files && f.files.length > 0; });
+      if (!hasFile) {
+        e.preventDefault();
+        err.classList.remove("hidden");
+      }
+    });
+    form.querySelectorAll("input.dfm-file").forEach(function (f) {
+      f.addEventListener("change", function () { err.classList.add("hidden"); });
+    });
+  })();
+</script>
+{% endblock %}
+{% block about_extra %}&middot; ruleset <span class="font-mono text-slate-400">{{ ruleset_version }}</span>{% endblock %}

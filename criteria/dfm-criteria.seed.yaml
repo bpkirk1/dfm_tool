@@ -1,0 +1,759 @@
+# =============================================================================
+# DFM CRITERIA — SEED CONFIG
+# =============================================================================
+# This file is the single source of truth for DFM rules. The application MUST
+# load rules from here (and sibling files), never hardcode limits. Engineers
+# and suppliers edit this file (or the UI that writes it) to tune criteria as
+# capability feedback arrives. Every rule is versioned and auditable.
+#
+# Values below are seeded from two real Amphenol TCS drawings:
+#   - Stamping: P-233-1111-500  (Signal Leadframe, multi-up, top, 1-4 pair)
+#   - Molding : P-229-1551-500  (Center Plastic, multi-up, 1-4 pair)
+#
+# operator: lt | lte | gt | gte | eq | between | angle_tol
+# severity: blocker | major | minor | info
+# supplier_adjustable: true if a supplier may revise this from capability data
+# =============================================================================
+
+meta:
+  schema_version: "1.0"
+  ruleset_version: "2026.06.19-r1"
+  units: mm                      # angles in degrees, Ra in micro-inch where noted
+  last_edited_by: cowork-dfm-agent
+  # r1 (2026-06-19): Brian approved 14 of the mine.1 items (incl. tightening
+  # MOLD-MIN-WALL-FILL 0.15->0.20 and loosening MOLD-MIN-CORNER-RADIUS 0.15->0.10)
+  # and the whole cnc_machining family; 5 single-source items remain proposed.
+  # ---------------------------------------------------------------------------
+  # status legend (added mine.1):
+  #   active   = approved limit, enforced (all original seed rules are active)
+  #   proposed = mined from a reference DFM, AWAITING Brian's sign-off (see
+  #              REVIEW_QUEUE.md). Proposed rules and proposed_* fields must NOT
+  #              be enforced until status is flipped to active by a human.
+  # evidence[] / seen_count = provenance reinforcement added by the mining agent.
+  # ---------------------------------------------------------------------------
+  notes: >
+    Ultra-thin precision leadframe stock (0.080 mm) means classic t-multiple
+    feature minimums (1*t holes, 1.5*t edges) are NOT meaningful — minimums are
+    set by SUPPLIER TOOLING CAPABILITY, so those rules are flagged
+    supplier_adjustable and seeded as placeholders to confirm at FAI.
+    seed.3 incorporates the AJET DFM review template (non-automotive,
+    update 2025-09-18): stamping blanking/cutoff/forming limits and molding
+    short-shot / shut-off / overflow / shrink / warp / over-mold-wall criteria.
+    seed.4 incorporates the PHD Low Profile 5-8 pair DFM compilation
+    (Amphenol TCS <-> AJET, 06-11-2026): stamping inside-corner radius and
+    bend-transition placement; molding min rib/post/hole, internal corner
+    radius, parting-line flash, sharp-corner venting and interference-clearance
+    chamfers. Items that need a measured value or visual confirmation are
+    seeded as manual-check criteria so they appear in every report with source.
+    seed.5 de-duplicates near-identical rules (inside/form radius now share one
+    parameter min_inside_corner_radius_mm; the pin-width blanking limit is folded
+    into the min-pierced-width rule) and the inside-corner radius is now
+    auto-measured from the model (min coaxial bend radius) instead of manual.
+    mine.1 (cowork-dfm-agent, run 2026-06-19) is the FIRST automated mining pass
+    over the reference_material/DFM_AI_Training corpus (75 PPTX + 1 PDF + 1 EML,
+    plus the two template sources already in the seed). It REINFORCES existing
+    rules with field-evidence, PROPOSES new stamping/molding rules, flags one
+    blocker tightening (min moldable wall) and one minor loosening (molded
+    internal radius) for review, and adds a NEW proposed process family,
+    cnc_machining, for the p1255 backing-plate / endcap parts. Nothing here is
+    active; every mine.1 item is status: proposed pending sign-off
+    (see CHANGELOG_dfm.md and REVIEW_QUEUE.md).
+
+# -----------------------------------------------------------------------------
+process_families:
+
+  # ===========================================================================
+  stamping:
+    applies_to_example: "P-233-1111-500 / 233-1111-020"
+    material:
+      family: copper_alloy
+      thickness_mm: 0.080
+      thickness_tol_mm: 0.005          # 0.080 +/-0.005, per MTS-515
+      spec: MTS-515
+      alloy_options:
+        - {code: D, spec: "MTS-506/769 per EGS-205"}
+        - {code: V, spec: "MTS-506/833 per EGS-205"}
+      grain_direction_defined_required: true
+
+    rules:
+      - id: STMP-BURR-GEN
+        parameter: burr_height
+        operator: lte
+        limit: 0.04
+        severity: major
+        source: "P-233-1111-500 Note 2"
+        supplier_adjustable: false
+      - id: STMP-BURR-SPEC
+        parameter: burr_height_specified_zone
+        operator: lte
+        limit: 0.02
+        severity: major
+        source: "P-233-1111-500 Note 3"
+        supplier_adjustable: false
+      - id: STMP-SHARP-CORNER
+        parameter: undimensioned_radius_or_sharp_corner
+        operator: lte
+        limit: 0.10
+        severity: minor
+        source: "P-233-1111-500 Note 13"
+        supplier_adjustable: false
+      - id: STMP-MODEL-CONFORM
+        parameter: undimensioned_feature_vs_model
+        operator: lte
+        limit: 0.05
+        severity: major
+        source: "P-233-1111-500 Note 20"
+        supplier_adjustable: false
+      - id: STMP-STOCK-THICKNESS-UNIFORM
+        parameter: stock_thickness_uniformity_dev_mm
+        operator: lte
+        limit: 0.05                    # max wall deviation from the model-derived gauge
+        severity: blocker
+        source: "model-derived stock gauge (sheet stock is single-gauge; used when no 2D thickness spec)"
+        supplier_adjustable: false
+
+      # --- AJET DFM review template (Concern & Proposal), update 2025-09-18 ----
+      - id: STMP-CUTOFF-STRAIGHT-MIN
+        parameter: tie_bar_cutoff_straight_mm
+        operator: gte
+        limit: 0.40                    # straight land needed to cut the tie-bar/strip
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Tie-bar & strip cutting): straight cut land >=0.40 mm"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-HOLE-TO-BEND
+        parameter: hole_to_bend_clearance_mm
+        operator: gte                  # r1: quantified from placeholder, Brian-approved 2026-06-19
+        limit: 0.03                    # mm, min hole-to-bend clearance
+        status: active
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Bending/stretch/coin); value from NextGen RAM field DFMs"
+        supplier_adjustable: false
+        seen_count: 3
+        evidence:
+          - "DFM NextGen RAM 2.0x2.0mm-X1 (2025-11-04) Sht12 / component-X1 (2025-11-04) Sht15: 'MIN. 0.03mm is required from the bend'"
+          - "DFM for Next Gen RAM P0.2 concept-20260330 Sht8: 'Keep at least 0.03mm away from edge for bending'"
+      - id: STMP-STANDOFF-PROTECT
+        parameter: standoff_protection
+        operator: eq
+        limit: "confirm: add stand-off to protect beams / compliant pins while in the reel"
+        severity: minor
+        source: "AJET DFM templet 2025-09-18 (Stand-off confirm)"
+        supplier_adjustable: false
+      - id: STMP-VCUT-CONFIRM
+        parameter: vcut_angle_and_depth
+        operator: eq
+        limit: "confirm: V-CUT angle & depth and edge-fold method (angle, number of passes)"
+        severity: info
+        source: "AJET DFM templet 2025-09-18 (V-CUT)"
+        supplier_adjustable: false
+      - id: STMP-OVERCUT-BURR
+        parameter: overcut_join_burr_mm
+        operator: lte                  # r1: quantified from placeholder, Brian-approved 2026-06-19
+        limit: 0.03                    # mm, max residual after over-cut
+        status: active
+        severity: minor
+        source: "AJET DFM templet 2025-09-18 (Over-cut location & burr); value from NextGen RAM field DFMs"
+        supplier_adjustable: false
+        seen_count: 2
+        evidence:
+          - "Concern for Next Gen RAM 2.0x2.0mm component-X1 (2025-11-04) Sht5: 'Max. 0.03mm residual after cutting'"
+          - "DFM NextGen RAM 2.0x2.0mm-X1 (2025-11-04) Sht5: 'Max. 0.03mm residual after cutting'; Sht8 'add plastic 0.05mm to cover the burr of over-cut'"
+
+      # --- PHD Low Profile 5-8 pair DFM compilation (TCS<->AJET 2026-06-11) -----
+      - id: STMP-RIGHT-ANGLE-RADIUS
+        parameter: min_inside_corner_radius_mm
+        operator: gte
+        limit: 0.2                     # sharp right angles crack when formed
+        severity: major
+        source: "PHD LP DFM compilation 2026-06-11 (stiffener): add R0.2 to right angles to avoid cracking"
+        supplier_adjustable: false
+      - id: STMP-BEND-TRANSITION-FLAT
+        parameter: bend_transition_location
+        operator: eq
+        limit: "confirm: keep the form/bend transition in the flat area (off features) to avoid cracking"
+        severity: major
+        source: "PHD LP DFM compilation 2026-06-11 (8*12 / 8*19 stiffener)"
+        supplier_adjustable: false
+      - id: STMP-STANDOFF-RIB
+        parameter: standoff_rib_reinforcement
+        operator: eq
+        limit: "confirm: rib-reinforce stand-offs (deformation seen in mass production without it)"
+        severity: minor
+        source: "PHD LP DFM compilation 2026-06-11 (center / signal stand-off)"
+        supplier_adjustable: false
+      - id: STMP-MATE-RA
+        parameter: mating_surface_roughness_Ra
+        operator: lte
+        limit: 16                      # micro-inch Ra
+        units: uin
+        severity: major
+        source: "P-233-1111-500 Note 15"
+        supplier_adjustable: false
+      - id: STMP-CHAMFER-STD
+        parameter: lead_in_chamfer
+        operator: eq
+        limit: "0.036 x 45deg, farside"
+        severity: info
+        source: "P-233-1111-500 Sht3 Details A/B/C/F"
+        supplier_adjustable: false
+
+      # --- geometric minimums: ultra-thin -> set by capability, confirm at FAI
+      - id: STMP-MIN-PIERCE
+        parameter: min_pierced_width_or_dia
+        operator: gte
+        limit: 0.15                    # PLACEHOLDER — confirm supplier capability
+        severity: blocker
+        source: "supplier capability (t=0.08 too thin for t-multiple rule); AJET DFM templet 2025-09-18 (Blanking) also calls min pin/land width >=0.15 mm"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-MIN-FEATURE-TO-EDGE
+        parameter: feature_to_edge
+        operator: gte
+        limit: 0.12                    # PLACEHOLDER — confirm supplier capability
+        severity: major
+        source: "supplier capability"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-MIN-INSIDE-RADIUS
+        parameter: min_inside_corner_radius_mm   # shared with STMP-RIGHT-ANGLE-RADIUS; auto-measured (min coaxial bend radius)
+        operator: gte
+        limit: 0.05                    # R0.05 typ appears on spring tabs; confirm
+        severity: major
+        source: "P-233-1111-500 Sht4 (R0.05) TYP — drawing min inside/form radius"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        # mine.1: field DFMs corroborate the ~R0.05 stamping floor (R0.025 not achievable)
+        seen_count: 2
+        evidence:
+          - "DFM for Next Gen RAM P0.2 concept-20260330 Sht6: 'Blanking radii should be at least of R0.05mm'"
+          - "PGCD DFM For 757-4111-03X (2026-05-23) Sht12/Sht14: 'product R0.025 cannot be met, optimize'; sharp corners recommended to R0.08 — confirms practical stamped inside-radius floor ~R0.05-0.08"
+
+      # ======================================================================
+      # mine.1 PROPOSED stamping rules (run 2026-06-19) — NOT active until signed off
+      # ======================================================================
+      - id: STMP-PLATING-STRIP-WIDTH-MAX
+        parameter: plating_strip_width_max_mm
+        operator: lte
+        limit: 80.0                    # plating line max strip/part width
+        severity: major
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "DFM for SentryHD RAM from AJET 2026-05-13 Sht7: 'width of pair 6 is over the 80mm maximum specified by the plating process ... can only be designed as a single strip'"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 3
+        evidence:
+          - "DFM SentryHD RAM 2026-05-13 Sht7: pair6 width 81.722mm > 80mm plating max"
+          - "757-4311-03X_DFM_A0 2026-06-03 Sht2: t0.05mm strip width 72.0mm -> feeding extremely difficult, plating tension very high, strip-hole deformation risk"
+          - "PGCD DFM 757-4111-03X 2026-05-23 Sht9: t0.08 width 70.4mm -> strip rigidity insufficient, feeding difficult, propose split (half) stamping"
+      - id: STMP-CUT-TO-BEND-EDGE
+        parameter: cut_edge_to_bend_edge_mm
+        operator: gte
+        limit: 0.12                    # straight land between a cut edge and the bend
+        severity: major
+        status: proposed
+        source: "DFM for Next Gen RAM P0.2 concept-20260406 Sht1: 'The 0.12mm from cutting edge to bending edge is required'"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 1
+        evidence:
+          - "DFM for Next Gen RAM P0.2 concept-20260406 Sht1: 0.12mm cut-edge-to-bend-edge required (distinct from hole-to-bend 0.03mm, see STMP-HOLE-TO-BEND)"
+      - id: STMP-2ND-PUNCH-CUTOFF-ANGLE
+        parameter: second_punch_cutoff_angle_deg
+        operator: gte
+        limit: 45                      # too-small cut angle on 2nd punch -> burrs
+        units: deg
+        severity: minor
+        status: proposed
+        source: "PGCD DFM For 757-4111-03X 2026-05-23 Sht21: 'angle at the cutting point of the second punch is too small, prone to burrs, change to 45 deg'"
+        supplier_adjustable: false
+        seen_count: 1
+
+    forming:
+      multi_axis: true
+      springback_comp_required_per_bend: true
+      # representative formed-angle callouts to verify against the model
+      form_angles_deg:
+        - {feature: "mating tine angle", target: 135, tol_plus: 8, tol_minus: 1, source: "Sht2"}
+        - {feature: "tube fold", target: 30, tol_plus: 1, tol_minus: 2, source: "Sht3"}
+        - {feature: "spring ramp", target: 45, tol: 5, source: "Sht3"}
+        - {feature: "spring approach", target: 23, source: "Sht3"}
+
+    strip:
+      multi_up_pairs: 4                # pairs 1-4 across
+      progression_pitch_mm: 20.00      # derived: 15 progressions = 300.00 +/-0.05
+      accumulated_15_prog_mm: 300.00
+      accumulated_15_prog_tol_mm: 0.05 # Note 18, SPC sample of 15 progressions
+      coining_for_pitch_camber_allowed: true   # Note 19
+      reeling_direction_defined: true  # Sht6
+
+    plating:
+      selective: true
+      au_zone_required: true
+      no_sn_on_carrier: true           # Note 11
+      lubricate_au_zone: true          # Note 17, per EGS-205
+      dims_are_before_plating: true    # Note 5
+
+    standards:
+      stamping: QAPS-0427              # Note 4
+      part_general: EGPS-0201          # Note 14
+      plating_spec: EGS-205            # Note 10
+      plating_quality: QAPS-0425       # Note 12
+
+  # ===========================================================================
+  molding:
+    applies_to_example: "P-229-1551-500 / 229-1551-100"
+    material:
+      resin_code: "807-0000-135"
+      spec: EGS-207                    # Note 1
+      family: thermoplastic_lcp_class
+
+    rules:
+      - id: MOLD-FLASH-EJECTOR
+        parameter: flash_at_ejector_pins
+        operator: lte
+        limit: 0.10
+        severity: major
+        source: "P-229-1551-500 Note 2"
+        supplier_adjustable: false
+      - id: MOLD-FLASH-GENERAL
+        parameter: flash_general
+        operator: lte
+        limit: 0.15
+        severity: minor
+        source: "P-229-1551-500 Note 2"
+        supplier_adjustable: false
+      - id: MOLD-FLASH-SPEC-REGION
+        parameter: flash_specified_region
+        operator: lte
+        limit: 0.05
+        severity: major
+        source: "P-229-1551-500 Notes 11/Sht-specific"
+        supplier_adjustable: false
+      - id: MOLD-SINK
+        parameter: sink_depth
+        operator: lte
+        limit: 0.05
+        severity: major
+        source: "P-229-1551-500 Note 8"
+        supplier_adjustable: false
+      - id: MOLD-DRAFT-POST
+        parameter: post_draft_angle
+        operator: lte
+        limit: 1.0                     # degrees, max allowable on posts
+        units: deg
+        severity: major
+        source: "P-229-1551-500 Sht4 Section E-E"
+        supplier_adjustable: false
+      - id: MOLD-PARTING-MISMATCH
+        parameter: parting_line_mismatch
+        operator: lte
+        limit: 0.03
+        severity: major
+        source: "P-229-1551-500 Note 12"
+        supplier_adjustable: false
+      - id: MOLD-GATE-VESTIGE
+        parameter: gate_vestige_from_tab
+        operator: lte
+        limit: 0.05
+        severity: minor
+        source: "P-229-1551-500 Note 6"
+        supplier_adjustable: false
+      - id: MOLD-MODEL-CONFORM
+        parameter: undimensioned_feature_vs_model
+        operator: lte
+        limit: 0.05
+        severity: major
+        source: "P-229-1551-500 Note 10"
+        supplier_adjustable: false
+      - id: MOLD-MIN-WALL
+        parameter: min_wall_or_trace_width
+        operator: gte
+        limit: 0.94                    # center trace 0.94 width; confirm flow/fill
+        severity: blocker
+        source: "P-229-1551-500 Sht2"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+
+      # --- AJET DFM review template (Concern & Proposal), update 2025-09-18 ----
+      - id: MOLD-MIN-WALL-FILL
+        parameter: min_moldable_wall_mm
+        operator: gte
+        limit: 0.20                    # r1: tightened 0.15->0.20, Brian-approved 2026-06-19 (REVIEW-MOLD-MIN-WALL resolved)
+        status: active
+        severity: blocker
+        source: "AJET DFM templet 2025-09-18 + field-DFM consensus (>=0.20 mm; lossy/long-flow regions push 0.25-0.30)"
+        supplier_adjustable: true
+        capability: {achieved_min: 0.18, cpk: null, confirmed: false}   # supplier-reachable point (round) per C15-HSG
+        seen_count: 7
+        evidence:
+          - "DFM2550324 CBF&CBM Housing 2025-07-10 Sht10: 0.13mm wall short-shot risk -> 'increase wall thickness to more than 0.2mm'"
+          - "DFM For C15-HSG-CONCEPT1 Sht12/15: 0.12mm & 0.05mm pin-hole walls short-shot -> 'increase to more than 0.2mm' (supplier: 'can only increase round to 0.18mm')"
+          - "TCS-4x4 / TCS-c15 hsg-concept DFMs Sht13/10: 0.13mm thin wall -> 'keep thickness 0.25mm MIN'"
+          - "NextGen RAM 2x2 top&bottom shell 2025-11-18 Sht10: 'thicken wall from 0.15 to 0.25mm'; -X2 'from 0.215 to 0.5mm'"
+          - "PHD LP DFM compilation 2026-06-11 Sht21/33: thin areas high short-shot risk -> 'increase them to 0.3mm'"
+          - "OS-Lossy Housing DFM 2025-04-24 Sht9: multiple 0.17mm thin walls -> difficult filling / short-shot"
+      - id: MOLD-SHUTOFF-WIDTH
+        parameter: shutoff_width_mm
+        operator: gte
+        limit: 0.15                    # straight shut-off land width
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Width of shut-off): >=0.15 mm"
+        supplier_adjustable: false
+      - id: MOLD-SHUTOFF-LENGTH
+        parameter: shutoff_length_mm
+        operator: gte
+        limit: 0.20                    # 0.10 mm land overflows
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Length of shut-off): >=0.20 mm"
+        supplier_adjustable: false
+      - id: MOLD-RESIN-OVERFLOW
+        parameter: resin_overflow_mm
+        operator: lte
+        limit: 0.05                    # max acceptable resin overflow
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Plastic overflow): <=0.05 mm"
+        supplier_adjustable: false
+      - id: MOLD-MAX-WALL-SHRINK
+        parameter: max_wall_thickness_mm
+        operator: lte
+        limit: 3.0                     # thick sections (e.g. 2.6 mm) risk sink/shrink
+        severity: minor
+        source: "AJET DFM templet 2025-09-18 (Shrinkage): core out thick sections"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: MOLD-WALL-UNIFORM-WARP
+        parameter: wall_thickness_uniformity
+        operator: eq
+        limit: "confirm: keep wall thickness uniform — non-uniform walls warp / lose flatness"
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Warping)"
+        supplier_adjustable: false
+      - id: MOLD-OM-WALL-MIN
+        parameter: overmold_wall_min_mm
+        operator: gte
+        limit: 0.50                    # thin over-mold wall destroyed during OM
+        severity: major
+        source: "AJET DFM templet 2025-09-18 (Deformation during OM): over-mold wall >=0.50 mm"
+        supplier_adjustable: false
+      - id: MOLD-ANTI-SEPARATION-HOLE
+        parameter: anti_separation_hole_dia_mm
+        operator: gte
+        limit: 0.30                    # catch-holes on the contact to lock plastic
+        severity: minor
+        source: "AJET DFM templet 2025-09-18 (Plastic separating): catch-holes >=Ø0.30 mm"
+        supplier_adjustable: false
+      - id: MOLD-TERMINAL-FIXING
+        parameter: terminal_support_pins
+        operator: eq
+        limit: "confirm: add support pins to fix contacts and prevent shift/deform during molding"
+        severity: minor
+        source: "AJET DFM templet 2025-09-18 (Terminal fixing)"
+        supplier_adjustable: false
+
+      # --- PHD Low Profile 5-8 pair DFM compilation (TCS<->AJET 2026-06-11) -----
+      - id: MOLD-MIN-RIB-WIDTH
+        parameter: min_rib_width_mm
+        operator: gte
+        limit: 0.25                    # 0.15 mm rib short-shots, esp. lossy resin
+        severity: major
+        source: "PHD LP DFM compilation 2026-06-11 (Q6.8): rib width >=0.25 mm"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 1
+        evidence:
+          - "PHD LP DFM compilation 2026-06-11 Sht55: 'width of this rib is only 0.15mm, high risk of short-shot, specially for the lossy, increase it to 0.25mm MIN'"
+      - id: MOLD-MIN-POST-DIM
+        parameter: min_post_dimension_mm
+        operator: gte
+        limit: 0.35                    # weak posts; keep length & width >=0.35 mm
+        severity: major
+        source: "PHD LP DFM compilation 2026-06-11 (shell-top-B Q6.3): post length & width >=0.35 mm"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence:
+          - "PHD LP DFM compilation 2026-06-11 Sht34: 'posts are kind of weak, make the length and width of the posts not be less than 0.35mm'"
+      - id: MOLD-MIN-HOLE-WIDTH
+        parameter: min_molded_hole_width_mm
+        operator: gte
+        limit: 0.35                    # 0.2 mm hole too weak
+        severity: minor
+        source: "PHD LP DFM compilation 2026-06-11 (shell-bot Q6.9): molded hole width >=0.35 mm"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence:
+          - "PHD LP DFM compilation 2026-06-11 Sht56: 'hole's width is only 0.2mm, it's too weak, increase to 0.35mm'"
+      - id: MOLD-MIN-CORNER-RADIUS
+        parameter: min_internal_corner_radius_mm
+        operator: gte
+        limit: 0.10                    # r1: floor relaxed 0.15->0.10, Brian-approved 2026-06-19 (REVIEW-MOLD-CORNER-RADIUS resolved). R0.3 still preferred.
+        status: active
+        severity: minor
+        source: "Housing DFM consensus: R0.1 practical molded/tooling floor (R0.06 unmachinable; R0.3 preferred). EDM can reach R0.08."
+        supplier_adjustable: true
+        capability: {achieved_min: 0.08, cpk: null, confirmed: false}   # R0.08 reachable by EDM
+        seen_count: 6
+        evidence:
+          - "PHD LP DFM compilation 2026-06-11 Sht21: 'increase radii to R0.3 ... updated to R0.15, cannot go larger' (agrees with floor 0.15 / R0.3 preferred)"
+          - "RAM 4x4&16x16 Org DFM (2025-11-20 .. 12-01) Sht2/3/6/7: 'R0.06 too small, tooling unable to fabricate, increase to R0.1'"
+          - "DFM2550324 CBF&CBM Housing 2025-07-10 Sht16: 'fillet too small for mold to process, cancel or increase to R0.1'"
+          - "16X16-HSG-CONCEPT2 2025-12-08 Sht13 & C15-HSG-CONCEPT1 Sht10: 'add R0.1 around groove (typ)'"
+          - "DFM2650336 SENTRY HD Housing 2026-06-01 Sht8: 'add Radius 0.10 to improve, R0.10 (TYP)'"
+          - "NextGen RAM 2x2 organizer-X1 2025-11-18 Sht13: 'sharp edges Max R0.08 by EDM process; keep max R0.08' (EDM capability)"
+      - id: MOLD-PARTING-FLASH-MAX
+        parameter: parting_line_flash_mm
+        operator: lte
+        limit: 0.1                     # parting-line flash cap (mis-match step 0.02 to mitigate)
+        severity: major
+        source: "PHD LP DFM compilation 2026-06-11 (Part line): flash 0.1 max"
+        supplier_adjustable: false
+        # mine.1: strongly reinforced across the corpus — 0.1mm is the consistent cap
+        seen_count: 10
+        evidence:
+          - "NextGen RAM 16x16 top&bottom shell (2025-12-04/05) Sht5,Sht11: 'Part Line flash max 0.1mm'"
+          - "NextGen RAM 2x2 top&bottom shell (2025-11-18) Sht5,Sht15: 'Part Line flash max 0.1mm'"
+          - "NextGen RAM 2x2 organizer (2025-11-15) Sht9: 128x EDM shut-offs -> 'control the MAX. 0.1mm flash'"
+          - "TCS-4x4 / TCS-c15 / TCS-16x16 hsg-concept DFMs Sht7,Sht8: 'parting/slider line burr 0.1mm MAX'"
+          - "PHD LP DFM compilation 2026-06-11 Sht30,Sht46: 'flash will be 0.1 max in the parting line area'"
+      - id: MOLD-SHARP-CORNER-VENT
+        parameter: sharp_corner_venting
+        operator: eq
+        limit: "confirm: sharp corners trap air -> gas burn / short-shot; add venting or radius"
+        severity: minor
+        source: "PHD LP DFM compilation 2026-06-11 (Q6.3 / Q6.7): sharp-corner burning"
+        supplier_adjustable: false
+      - id: MOLD-INTERFERENCE-CHAMFER
+        parameter: interference_clearance_chamfer
+        operator: eq
+        limit: "confirm: add lead-in / clearance chamfer (e.g. c0.05-0.25) where mating parts interfere"
+        severity: minor
+        source: "PHD LP DFM compilation 2026-06-11 (shield / shell interference)"
+        supplier_adjustable: false
+
+      # ======================================================================
+      # mine.1 PROPOSED molding rules (run 2026-06-19) — NOT active until signed off
+      # ======================================================================
+      - id: MOLD-SUBGATE-RESIDUAL
+        parameter: sub_gate_residual_max_mm
+        operator: lte
+        limit: 0.12                    # sub/submarine-gate residual after de-gating (0.10-0.12 typ)
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "DFM-k1bnj6-gg-thk200 (2025-05) Sht8: 'gate residual will be 0.12mm Max'"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 5
+        evidence:
+          - "DFM-k1bnj6 Sht8 & HAORUN p1255-c15-ram-org 2025-12-01 Sht9: 'gate residual 0.12mm Max, please confirm'"
+          - "DFM2550324 CBF&CBM Housing 2025-07-10 Sht23: 'Gate Residual Max 0.10mm' (sub gate, cut 0.1mm countertop)"
+          - "DFM2650336 SENTRY HD Housing 2026-06-01 Sht15-18: sub gate Ø0.6, 1.5x0.2DP gate-void"
+          - "16X16-HSG-CONCEPT2 2025-12-08 Sht8: 'residual gate material of 0.2(Max)' (worst-case 0.2 when un-cored)"
+          - "C15-HSG-CONCEPT1 Sht8: 'residual gate material 0.1(Max)'"
+      - id: MOLD-RELEASE-DRAFT-MIN
+        parameter: recommended_release_draft_deg
+        operator: gte
+        limit: 2.0                     # min draft to add for clean release (range 1.5-4 deg seen)
+        units: deg
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "DFM for SentryHD RAM-20260511 Sht9: 'add a 2 deg draft by reducing plastic around posts to prevent sticking'"
+        supplier_adjustable: true
+        seen_count: 5
+        evidence:
+          - "NextGen RAM 16x16 top&bottom shell 2025-12-04 Sht7: 'add draft 3 deg by reducing plastic'"
+          - "NextGen RAM 2x2 organizer-X2 2025-12-01 Sht5/6: 'Draft 4 deg by reducing plastic on all similar features'"
+          - "SentryHD RAM 2026-05-11 Sht9 & HAORUN 2025-12-01 Sht25: '2 deg draft around posts'"
+          - "RAM 4x4 &16x16 &16x15 ORG 2025-12-08 Sht10: 'add plastic 1.5 deg draft'"
+          - "NOTE: distinct from MOLD-DRAFT-POST (<=1.0 deg dimensional cap); this is the MIN release draft to add"
+      - id: MOLD-WELDLINE-ANGLE-MIN
+        parameter: weld_line_convergence_angle_deg
+        operator: gte
+        limit: 135                     # below 135 deg weld lines become visible -> vent
+        units: deg
+        severity: minor
+        status: proposed
+        source: "DFM For 16X16-HSG-CONCEPT2-20251208 Sht27 (moldflow): 'Welding lines with a convergence angle less than 135 deg are visible. Advise add air vent on weld lines.'"
+        supplier_adjustable: false
+        seen_count: 1
+      - id: MOLD-SHEAR-RATE-MAX
+        parameter: max_shear_rate_1_per_s
+        operator: lte
+        limit: 60000                   # LCP Kingfa Vicryst R8332 processing ceiling
+        units: "1/s"
+        severity: major
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255 16x16 Org-MDX-DFM-V1 Sht2: 'Max. Share rate 60000 1/s' (resin Vicryst R8332)"
+        supplier_adjustable: true
+        seen_count: 2
+        evidence:
+          - "p1255 16x16 Org-MDX-DFM-V1 Sht2: max shear rate 60000 1/s"
+          - "16X16-HSG-CONCEPT2 2025-12-08 Sht26 (moldflow): analysis 55526 1/s, 'Recommend(1/s) <60000'"
+      - id: MOLD-SHEAR-STRESS-MAX
+        parameter: max_shear_stress_mpa
+        operator: lte
+        limit: 0.5                     # LCP Kingfa Vicryst R8332
+        units: MPa
+        severity: major
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255 16x16 Org-MDX-DFM-V1 Sht2: 'Max. Share stress 0.5 Mpa' (resin Vicryst R8332, max melt 375 C)"
+        supplier_adjustable: true
+        seen_count: 1
+      - id: MOLD-SINK-SHRINK-THRESHOLD
+        parameter: volumetric_shrinkage_sink_pct
+        operator: lte
+        limit: 12                      # sink mark becomes visible above ~12% volumetric shrink
+        units: pct
+        severity: minor
+        status: proposed
+        source: "DFM For 16X16-HSG-CONCEPT2-20251208 Sht30 (moldflow): 'Sink mark is visible that volume shrinkage rate >12%'"
+        supplier_adjustable: false
+        seen_count: 1
+      - id: MOLD-INSERT-SEAL-LENGTH
+        parameter: insert_mold_straight_sealing_length_mm
+        operator: gte
+        limit: 1.0                     # straight sealing land where plastic seals onto an insert
+        severity: major
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "DFM for Next Gen RAM 2.0x2.0mm component-X1 2025-10-14 Sht7: 'Straight sealing length need 1.0mm MIN; injection insert length need 0.5mm; avoiding gap need 0.5mm'"
+        supplier_adjustable: false
+        seen_count: 2
+        evidence:
+          - "NextGen RAM 2.0x2.0mm component-X1 2025-10-14 Sht7: straight sealing length >=1.0mm; insert length >=0.5mm"
+          - "NextGen RAM 2.0x2.0mm component-X1 2025-11-04 Sht14: 'MIN. 0.5 mm is required to clamp the material for twisting'"
+      - id: MOLD-MISMATCH-RELIEF-STEP
+        parameter: parting_mismatch_relief_step_mm
+        operator: eq
+        limit: "design technique: add a ~0.02 mm relief step at the parting/shut-off to absorb tooling mismatch and prevent an out-of-profile witness"
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "NextGen RAM 16x16/2x2 shells & PHD LP compilation: 'make/add step 0.02mm to reduce the influence of mis-match'"
+        supplier_adjustable: false
+        seen_count: 4
+        evidence:
+          - "NextGen RAM 16x16 top&bottom shell 2025-12-04 Sht5; 2x2 shell 2025-11-18 Sht5: 'make step 0.02mm to solve the out-profile defect due to tooling mismatch'"
+          - "PHD LP DFM compilation 2026-06-11 Sht46: 'Add a step 0.02 to reduce the influence of mis-match' (paired with MOLD-PARTING-MISMATCH <=0.03)"
+      - id: MOLD-PIN-HOLE-TRUE-POSITION
+        parameter: molded_pin_hole_true_position_mm
+        operator: lte
+        limit: 0.35                    # achieved TP on dense molded pin fields; relaxed to 0.5 on 16x16
+        severity: minor
+        status: proposed
+        source: "DFM For 16X16-HSG-CONCEPT2-20251208 Sht20: '12x12 pins true position ~0.35mm by experience; recommend relax to 0.5mm for this product; one-sided deformation up to 0.25mm'"
+        supplier_adjustable: true
+        capability: {achieved_min: 0.35, relaxed_to: 0.5, cpk: null, confirmed: false}
+        seen_count: 2
+        evidence:
+          - "16X16-HSG-CONCEPT2 2025-12-08 Sht20: 12x12 pin TP ~0.35mm experience, relax to 0.5mm"
+          - "DFM2650336 SENTRY HD Housing 2026-06-01 Sht28: 'positional tolerance of holes about 0.5' (similar-product experience)"
+      - id: MOLD-TEXTURE-FINISH
+        parameter: mold_surface_texture
+        operator: eq
+        limit: "VDI3400-9 on product/cavity surfaces; VDI3400-6 on hole/core positions (max)"
+        severity: info
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "DFM-k1bnj6-gg-thk200 (2025-05) Sht13: 'finish follow VID3400/9 MAX'; HAORUN p1255-c15-ram-org 2025-12-01 Sht14: 'product surface VDI/9, hole positions VDI/6'"
+        supplier_adjustable: true
+        seen_count: 2
+
+    material_capability:           # molding resin reference (LCP Kingfa Vicryst R8332 / 807-0000-135)
+      status: active               # r1: Brian-approved 2026-06-19
+      resin: "LCP Kingfa Vicryst R8332 (807-0000-135)"
+      max_melt_temp_C: 375
+      linear_shrink_pct_typ: 0.6   # moldflow, both 4pr & 16pr organizers
+      source: "p1255 16x16 Org-MDX-DFM-V1 Sht2; 11192025 Moldflow avg linear shrink warp prediction (org) Sht6/Sht17"
+
+    standards:
+      part_general: EGPS-0201
+      material_spec: EGS-207
+
+  # ===========================================================================
+  # NEW PROCESS FAMILY (mine.1, run 2026-06-19) — ENTIRE FAMILY status: proposed.
+  # Source corpus: the p1255 "CNC Machining Suggestions" decks (SMTG, V1.0
+  # 2025-12-15 / V2.0 2025-12-24) for the 4-pair & 16-pair backing-plate and
+  # endcap (machined metal hardware, NOT stamped or molded). Kept in its own
+  # family so no rule crosses into stamping/molding. Awaiting Brian's sign-off.
+  # ===========================================================================
+  cnc_machining:
+    status: active                 # r1: family Brian-approved 2026-06-19 (all 6 rules active)
+    applies_to_example: "p1255 4p/16p backing-plate & endcap (machined hardware)"
+
+    rules:
+      - id: CNC-TOOL-CLEARANCE-MIN
+        parameter: machining_clearance_min_mm
+        operator: gte
+        limit: 0.8                     # tool-access clearance so a cutter can reach the pocket/root
+        severity: major
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255-16p & 4p backing-plate / endcap CNC Suggestions (SMTG, 2025-12-15/24): 'clearance 0.5-0.6mm too small, increase to 0.8mm and cancel root radius'"
+        supplier_adjustable: true
+        seen_count: 6
+        evidence:
+          - "p1255-16p-backing-plate V1/V2 Sht5: '0.5mm clearance -> increase to 0.8mm'"
+          - "p1255-16p-endcap V1/V2 Sht10: 'Clearance 0.6mm -> over 0.8mm'"
+          - "p1255-4p-backing-plate V1/V2 Sht5 & 4p-endcap V1/V2 Sht6: '0.5mm -> 0.8mm clearance'"
+      - id: CNC-MIN-INTERNAL-RADIUS
+        parameter: machining_internal_root_radius_min_mm
+        operator: gte
+        limit: 0.1                     # floor; open up to R1.0-R2.0 where space allows (tool-life)
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255 CNC Suggestions: tiny root radii enlarged (R0.5->R2.0, R0.25->R1.0); min root R0.1 to match post root"
+        supplier_adjustable: true
+        seen_count: 4
+        evidence:
+          - "p1255-16p-backing-plate V1/V2 Sht3: 'Radius R0.5 -> R2.0'"
+          - "p1255-16p-endcap V1/V2 Sht8/Sht16: 'R0.25 -> R1.0' (TM: 'R1.0 will interfere with screw head/washer' — feature-dependent)"
+          - "p1255-16p-endcap V2 Sht15 & 4p-endcap V2 Sht7: 'root radius R0.1 matching the root radius of the post'"
+      - id: CNC-EDGE-CHAMFER-DEBURR
+        parameter: machined_edge_chamfer
+        operator: eq
+        limit: "C0.1-C0.15 chamfer all around to avoid machining burrs; keep opening chamfers < C0.1 with a small flat"
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255-16p-endcap V1/V2 Sht13: 'Chamfer all around C0.1-C0.15 to avoid machining burrs'; 4p-backing-plate Sht4: 'reduce opening chamfer to < C0.1, leave small flat to avoid burr'"
+        supplier_adjustable: false
+        seen_count: 3
+      - id: CNC-MIN-LEFTOVER-WALL
+        parameter: machined_leftover_wall_min_mm
+        operator: gte
+        limit: 0.7                     # thin residual wall between machined features
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255-4p-backing-plate CNC Suggestions V1/V2 Sht6: 'leftover material at the position shown is less than 0.7 mm' (flagged as too thin)"
+        supplier_adjustable: true
+        seen_count: 1
+      - id: CNC-BLIND-THREAD-RELIEF
+        parameter: blind_threaded_hole_relief
+        operator: eq
+        limit: "add a relief groove at the bottom of a blind threaded hole (make it a through/relieved hole); ensure effective thread depth >= 2.85 mm"
+        severity: minor
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255-16p-endcap CNC Suggestions V1/V2 Sht6: blind threaded hole depth 7.9mm -> add relief groove, effective thread depth > 2.85 mm"
+        supplier_adjustable: false
+        seen_count: 1
+      - id: CNC-TOLERANCE-CAPABILITY
+        parameter: cnc_drawing_tolerance_capability
+        operator: eq
+        limit: "achievable CNC bands (SMTG): true-position ~0.10-0.15 (relaxed from tighter callouts, up to 0.25 on some), flatness/profile ~0.10-0.15, linear typ +/-0.06 to +/-0.10"
+        severity: info
+        status: active                 # r1: Brian-approved 2026-06-19
+        source: "p1255 backing-plate/endcap CNC Suggestions V2.0 2025-12-24 (tolerance slides) with TM responses ('can relax to +/-0.10', 'positional relax to 0.15')"
+        supplier_adjustable: true
+        capability: {positional_typ: 0.15, flatness_typ: 0.10, linear_typ: 0.10, confirmed: false}
+        seen_count: 4
+
+    standards:
+      part_general: EGPS-0201
+
+# -----------------------------------------------------------------------------
+# CTF (Critical-To-Function) dimension tracking
+# Ballooned dims are CTF, measured in-process with SPC; SPC data accompanies
+# every lot, and FAI feedback revises tolerances. The app tracks CTF dims with
+# their achieved capability so criteria evolve from real production data.
+# -----------------------------------------------------------------------------
+ctf_tracking:
+  enabled: true
+  measured_in_process_spc: true
+  spc_data_per_lot: true
+  fields_per_ctf: [balloon_id, nominal, tol_plus, tol_minus, drawing_sheet, cpk_target, cpk_actual, sample_n, status]
+  cpk_target_default: 1.33

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}DFM Feedback Tool{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: "#eef4ff", 100: "#dbe6ff", 300: "#7da2ff",
+              500: "#3b6bff", 600: "#2f5fef", 700: "#244ccc",
+            },
+            ink: {
+              900: "#070b14", 850: "#0a0f1c", 800: "#0e1422",
+              750: "#121a2c", 700: "#1a2438", 600: "#26324a",
+            },
+          },
+          fontFamily: {
+            sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      background-color: #070b14;
+      background-image:
+        radial-gradient(900px 480px at 50% -10%, rgba(47,95,239,0.18), transparent 60%),
+        radial-gradient(700px 500px at 100% 0%, rgba(59,107,255,0.10), transparent 55%);
+      background-attachment: fixed;
+    }
+    .brand-eyebrow { letter-spacing: 0.42em; }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: white !important; color: #0f172a !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-ink-900 text-slate-200 font-sans antialiased flex flex-col">
+  <header class="no-print border-b border-white/5 bg-ink-850/70 backdrop-blur">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-3 group">
+        <span class="inline-flex items-center justify-center w-9 h-9 rounded-full ring-1 ring-white/15 bg-ink-900 overflow-hidden shadow-lg shadow-brand-600/20">
+          <img src="/static/amphenolian.png" alt="The Amphenolian" class="w-full h-full object-cover object-top scale-[1.6] translate-y-1" />
+        </span>
+        <span class="flex flex-col leading-none">
+          <span class="text-[10px] font-semibold tracking-[0.3em] text-slate-400 group-hover:text-slate-300">AMPHENOL</span>
+          <span class="text-sm font-semibold text-white tracking-tight">DFM &amp; Design-Criteria Feedback</span>
+        </span>
+      </a>
+      <span class="text-xs text-slate-400 hidden sm:inline">Stamping &middot; Molding</span>
+    </div>
+  </header>
+  <main class="max-w-5xl mx-auto w-full px-6 py-10 flex-1">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="no-print border-t border-white/5 bg-ink-850/60 mt-10">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+      <span>
+        <span class="text-slate-300 font-medium">About</span>
+        &mdash; {{ APP_NAME }}
+        <span class="font-mono text-slate-400">v{{ APP_VERSION }}</span>
+        {% block about_extra %}{% endblock %}
+      </span>
+      <span class="text-slate-600">Versioned criteria &middot; provenance on every result</span>
+    </div>
+  </footer>
+</body>
+</html>
