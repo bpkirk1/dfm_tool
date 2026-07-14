@@ -28,6 +28,10 @@ def main() -> int:
     )
     ap.add_argument("--flat", metavar="OUT.svg", help="Develop the flat pattern and write an SVG")
     ap.add_argument("--flat-dxf", metavar="OUT.dxf", help="Also write the developed blank as DXF")
+    # Per-run display toggles (presentation only; mirror the web UI). They never
+    # change verdicts, the score, or what is evaluated/stored.
+    ap.add_argument("--no-manual", action="store_true", help="Hide 'needs manual check' items")
+    ap.add_argument("--no-strip", action="store_true", help="Suppress die-layout suggestions")
     args = ap.parse_args()
 
     store = CriteriaStore(config.DB_PATH)
@@ -35,6 +39,9 @@ def main() -> int:
         store.sync_from_yaml(config.CRITERIA_SEED_PATH)
 
     if args.strip:
+        if args.no_strip:
+            print("Die-layout suggestions are disabled (--no-strip); nothing to show.")
+            return 0
         return _strip(store, args)
     if args.flat or args.flat_dxf:
         return _flat(store, args)
@@ -48,6 +55,10 @@ def main() -> int:
             part_name=args.part_name,
         ),
     )
+
+    show_manual = not args.no_manual
+    show_strip = not args.no_strip
+    report["display_options"] = {"show_manual": show_manual, "show_strip": show_strip}
 
     if args.json:
         print(json.dumps(report, indent=2, default=str))
@@ -65,9 +76,15 @@ def main() -> int:
         print(f"  stock thickness: {g['stock_thickness_mm']} mm   bbox: {g['dimensions_mm']}")
     print("\n  rule                     verdict   limit            source")
     print("  " + "-" * 74)
+    hidden_manual = 0
     for r in s["results"]:
+        if not show_manual and r["verdict"] == "manual":
+            hidden_manual += 1
+            continue
         print(f"  {r['rule_id']:<24} {r['verdict']:<8} "
               f"{str(r['limit_detail']):<16} {r['source']}")
+    if hidden_manual:
+        print(f"  ({hidden_manual} manual-check item(s) hidden by --no-manual)")
     print()
     return 0
 

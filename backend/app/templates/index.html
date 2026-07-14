@@ -72,6 +72,27 @@
       </div>
     </div>
 
+    <!-- Per-run display toggles (presentation only — do not change verdicts/score). -->
+    <fieldset class="rounded-xl border border-white/10 bg-ink-750 p-4">
+      <legend class="px-1 text-xs font-medium uppercase tracking-wide text-slate-400">Report options</legend>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
+          <input type="checkbox" id="opt-manual" checked
+                 class="h-4 w-4 rounded border-white/20 bg-ink-800 text-brand-600 focus:ring-brand-500 focus:ring-offset-0" />
+          Include manual-check items
+        </label>
+        <label class="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer">
+          <input type="checkbox" id="opt-strip" checked
+                 class="h-4 w-4 rounded border-white/20 bg-ink-800 text-brand-600 focus:ring-brand-500 focus:ring-offset-0" />
+          Include stamping die layout suggestions
+        </label>
+      </div>
+      <!-- Explicit boolean carriers: unchecked checkboxes aren't submitted, so the
+           visible checkboxes above drive these hidden fields via JS instead. -->
+      <input type="hidden" name="show_manual" class="opt-manual-val" value="true" />
+      <input type="hidden" name="show_strip" class="opt-strip-val" value="true" />
+    </fieldset>
+
     <p id="dfm-error" class="hidden text-sm text-amber-400">
       Add at least one file &mdash; a 3D model, a 2D drawing, or both.
     </p>
@@ -92,9 +113,13 @@
   <p class="text-xs text-slate-500 mt-1">Requires example PDF + STEP files in <span class="font-mono">/examples</span>.</p>
   <div class="mt-4 flex flex-wrap gap-3">
     <form action="/evaluate/example/stamping" method="post">
+      <input type="hidden" name="show_manual" class="opt-manual-val" value="true" />
+      <input type="hidden" name="show_strip" class="opt-strip-val" value="true" />
       <button type="submit" class="text-sm px-4 py-2 border border-white/15 text-slate-200 rounded-lg hover:bg-white/5 transition-colors">Run stamping example</button>
     </form>
     <form action="/evaluate/example/molding" method="post">
+      <input type="hidden" name="show_manual" class="opt-manual-val" value="true" />
+      <input type="hidden" name="show_strip" class="opt-strip-val" value="true" />
       <button type="submit" class="text-sm px-4 py-2 border border-white/15 text-slate-200 rounded-lg hover:bg-white/5 transition-colors">Run molding example</button>
     </form>
     <a href="/strip?family=stamping"
@@ -122,6 +147,32 @@
     });
     form.querySelectorAll("input.dfm-file").forEach(function (f) {
       f.addEventListener("change", function () { err.classList.add("hidden"); });
+    });
+  })();
+
+  // Per-run display toggles: remember the last state locally and keep every
+  // form's hidden boolean carriers in sync with the visible checkboxes.
+  (function () {
+    var toggles = [
+      { box: "opt-manual", cls: "opt-manual-val", key: "dfm_show_manual" },
+      { box: "opt-strip", cls: "opt-strip-val", key: "dfm_show_strip" },
+    ];
+    toggles.forEach(function (t) {
+      var box = document.getElementById(t.box);
+      if (!box) return;
+      var stored = null;
+      try { stored = localStorage.getItem(t.key); } catch (e) {}
+      if (stored !== null) box.checked = stored === "true";
+      function apply() {
+        var v = box.checked ? "true" : "false";
+        Array.prototype.forEach.call(
+          document.querySelectorAll("input." + t.cls),
+          function (h) { h.value = v; }
+        );
+        try { localStorage.setItem(t.key, v); } catch (e) {}
+      }
+      apply();
+      box.addEventListener("change", apply);
     });
   })();
 </script>

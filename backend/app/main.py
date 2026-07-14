@@ -177,21 +177,25 @@ def _limit_for(fam, parameter: str):
 
 
 @app.get("/strip", response_class=HTMLResponse)
-def strip_view(family: str = "stamping", model: str = ""):
+def strip_view(family: str = "stamping", model: str = "", show_strip: bool = True):
     try:
         layout = _build_strip_layout(family, model)
     except KeyError:
         return HTMLResponse(f"Unknown or non-stamping family '{family}'", status_code=400)
-    return _render("strip.html", layout=layout.to_dict(), model=model)
+    # Direct navigation still works; when the run had die-layout suggestions off
+    # (show_strip=false) the page shows a note that it was disabled for that run.
+    return _render("strip.html", layout=layout.to_dict(), model=model, show_strip=show_strip)
 
 
 @app.get("/api/strip")
-def api_strip(family: str = "stamping", model: str = ""):
+def api_strip(family: str = "stamping", model: str = "", show_strip: bool = True):
     try:
         layout = _build_strip_layout(family, model)
     except KeyError:
         return JSONResponse({"error": f"Unknown family '{family}'"}, status_code=400)
-    return JSONResponse(layout.to_dict())
+    payload = layout.to_dict()
+    payload["display_options"] = {"show_strip": show_strip}
+    return JSONResponse(payload)
 
 
 # --- Phase 7: flat-pattern views + supplier exports ---------------------------
@@ -344,6 +348,16 @@ def _save_upload(upload: UploadFile | None) -> Optional[Path]:
     return dest
 
 
+def _with_display(report: dict, show_manual: bool, show_strip: bool) -> dict:
+    """Record the per-run display toggles on the report (presentation-only).
+
+    These never change verdicts, the score, or what was evaluated/stored — they
+    only tell the template/PDF/API consumer what to render for this run.
+    """
+    report["display_options"] = {"show_manual": show_manual, "show_strip": show_strip}
+    return report
+
+
 @app.post("/evaluate", response_class=HTMLResponse)
 async def evaluate(
     request: Request,
@@ -351,6 +365,8 @@ async def evaluate(
     pdf_file: UploadFile | None = File(default=None),
     family: str = Form(default=""),
     part_name: str = Form(default=""),
+    show_manual: bool = Form(default=True),
+    show_strip: bool = Form(default=True),
 ):
     _sync()
     step_path = _save_upload(step_file)
@@ -365,7 +381,8 @@ async def evaluate(
             part_name=part_name or None,
         ),
     )
-    return _render("report.html", r=report)
+    _with_display(report, show_manual, show_strip)
+    return _render("report.html", r=report, show_manual=show_manual, show_strip=show_strip)
 
 
 @app.post("/api/evaluate")
@@ -374,6 +391,8 @@ async def api_evaluate(
     pdf_file: UploadFile | None = File(default=None),
     family: str = Form(default=""),
     part_name: str = Form(default=""),
+    show_manual: bool = Form(default=True),
+    show_strip: bool = Form(default=True),
 ):
     _sync()
     step_path = _save_upload(step_file)
@@ -387,6 +406,7 @@ async def api_evaluate(
             part_name=part_name or None,
         ),
     )
+    _with_display(report, show_manual, show_strip)
     return JSONResponse(report)
 
 
@@ -470,7 +490,12 @@ def _example_paths(family: str) -> tuple[Path, Path]:
 
 
 @app.post("/evaluate/example/{family}", response_class=HTMLResponse)
-def evaluate_example(request: Request, family: str):
+def evaluate_example(
+    request: Request,
+    family: str,
+    show_manual: bool = Form(default=True),
+    show_strip: bool = Form(default=True),
+):
     _sync()
     if family not in _EXAMPLES:
         return HTMLResponse(f"Unknown family '{family}'", status_code=400)
@@ -482,11 +507,16 @@ def evaluate_example(request: Request, family: str):
         _store,
         RunInputs(step_path=step_path, pdf_path=pdf_path, family=family),
     )
-    return _render("report.html", r=report)
+    _with_display(report, show_manual, show_strip)
+    return _render("report.html", r=report, show_manual=show_manual, show_strip=show_strip)
 
 
 @app.post("/api/evaluate/example/{family}")
-def api_evaluate_example(family: str):
+def api_evaluate_example(
+    family: str,
+    show_manual: bool = Form(default=True),
+    show_strip: bool = Form(default=True),
+):
     _sync()
     if family not in _EXAMPLES:
         return JSONResponse({"error": f"Unknown family '{family}'"}, status_code=400)
@@ -498,6 +528,7 @@ def api_evaluate_example(family: str):
         _store,
         RunInputs(step_path=step_path, pdf_path=pdf_path, family=family),
     )
+    _with_display(report, show_manual, show_strip)
     return JSONResponse(report)
 
 
@@ -507,6 +538,8 @@ async def api_report_pdf(
     pdf_file: UploadFile | None = File(default=None),
     family: str = Form(default=""),
     part_name: str = Form(default=""),
+    show_manual: bool = Form(default=True),
+    show_strip: bool = Form(default=True),
 ):
     _sync()
     report = build_report(
@@ -518,8 +551,9 @@ async def api_report_pdf(
             part_name=part_name or None,
         ),
     )
+    _with_display(report, show_manual, show_strip)
     return Response(
-        content=render_report_pdf(report),
+        content=render_report_pdf(report, show_manual=show_manual, show_strip=show_strip),
         media_type="application/pdf",
         headers={"Content-Disposition": "attachment; filename=dfm-report.pdf"},
     )

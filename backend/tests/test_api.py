@@ -79,3 +79,52 @@ def test_ctf_accepts_supplier_capability_entry():
     body = r.json()
     assert body["count"] == 1
     assert body["kinds"] == ["supplier_capability"]
+
+
+# --- Phase 2: per-run display toggles ----------------------------------------
+def _evaluate_html(**data):
+    files = {"step_file": ("synthetic-sig-strip.stp", EXAMPLE_STEP.read_bytes(),
+                           "application/octet-stream")}
+    return client.post("/evaluate", files=files, data={"family": "stamping", **data})
+
+
+def _evaluate_json(**data):
+    files = {"step_file": ("synthetic-sig-strip.stp", EXAMPLE_STEP.read_bytes(),
+                           "application/octet-stream")}
+    return client.post("/api/evaluate", files=files, data={"family": "stamping", **data})
+
+
+def test_defaults_render_both_sections():
+    html = _evaluate_html().text
+    assert "Requires manual check" in html
+    assert "Generate strip layout" in html
+
+
+def test_show_manual_false_hides_manual_section():
+    html = _evaluate_html(show_manual="false").text
+    assert "Requires manual check" not in html
+    # strip is untouched by the manual toggle
+    assert "Generate strip layout" in html
+
+
+def test_show_strip_false_hides_strip_button():
+    html = _evaluate_html(show_strip="false").text
+    assert "Generate strip layout" not in html
+    # manual section still present when only strip is toggled off
+    assert "Requires manual check" in html
+
+
+def test_json_keeps_manual_data_but_records_display_options():
+    body = _evaluate_json(show_manual="false").json()
+    # underlying data is intact — hiding is presentation-only
+    assert body["summary"]["manual_check_parameters"]
+    assert body["display_options"]["show_manual"] is False
+    assert body["display_options"]["show_strip"] is True
+
+
+def test_toggles_do_not_change_verdicts_or_score():
+    base = _evaluate_json().json()["summary"]
+    toggled = _evaluate_json(show_manual="false", show_strip="false").json()["summary"]
+    assert base["counts"] == toggled["counts"]
+    assert base["readiness_score"] == toggled["readiness_score"]
+    assert len(base["results"]) == len(toggled["results"])

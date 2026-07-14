@@ -13,6 +13,14 @@
   </button>
 </div>
 
+{% set show_strip = true if show_strip is not defined else show_strip %}
+{% if not show_strip %}
+<div class="no-print mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+  Die-layout suggestions were turned off for this run. This layout is shown because
+  you navigated here directly.
+</div>
+{% endif %}
+
 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 print:shadow-none print:border-0">
   <div class="border-b border-slate-100 pb-5">
     <h1 class="text-2xl font-semibold text-slate-900">First-pass progressive die layout</h1>

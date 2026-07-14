@@ -12,7 +12,11 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from .. import config
 
 
-def render_report_pdf(report: dict[str, Any]) -> bytes:
+def render_report_pdf(
+    report: dict[str, Any], show_manual: bool = True, show_strip: bool = True
+) -> bytes:
+    # show_manual/show_strip are presentation-only per-run toggles. They never
+    # change the underlying report data — only what this PDF renders.
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -38,6 +42,8 @@ def render_report_pdf(report: dict[str, Any]) -> bytes:
 
     rows = [["Rule ID", "Parameter", "Measured", "Limit", "Verdict", "Severity", "Source"]]
     for row in summary.get("results", []):
+        if not show_manual and row.get("verdict") == "manual":
+            continue  # presentation-only: hide manual rows for this run
         measured = row.get("measured")
         rows.append(
             [
@@ -66,7 +72,7 @@ def render_report_pdf(report: dict[str, Any]) -> bytes:
     story.append(table)
 
     manual = summary.get("manual_check_parameters", [])
-    if manual:
+    if manual and show_manual:
         story.append(Spacer(1, 12))
         story.append(Paragraph("<b>Requires manual check</b>", styles["Heading3"]))
         for param in manual:
