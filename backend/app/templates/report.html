@@ -4,6 +4,7 @@
 {# Per-run display toggles default on if the route didn't pass them. #}
 {% set show_manual = true if show_manual is not defined else show_manual %}
 {% set show_strip = true if show_strip is not defined else show_strip %}
+{% set commentary = commentary if commentary is defined else [] %}
 <div class="no-print mb-4 flex items-center justify-between">
   <a href="/" class="text-sm text-slate-300 hover:text-white">&larr; New check</a>
   <div class="flex items-center gap-2">
@@ -29,6 +30,16 @@
     <a href="/fixes.yaml?family={{ r.family }}&model={{ r.model_file }}"
        class="text-sm px-4 py-2 border border-emerald-500/50 text-emerald-200 rounded-lg hover:bg-emerald-600/15">
       (YAML)
+    </a>
+    {% endif %}
+    {% if commentary and r.model_file %}
+    <a href="/commentary.md?family={{ r.family }}&model={{ r.model_file }}&show_manual={{ show_manual|lower }}&show_strip={{ show_strip|lower }}"
+       class="text-sm px-4 py-2 border border-violet-500/50 text-violet-200 rounded-lg hover:bg-violet-600/15">
+      Commentary (MD)
+    </a>
+    <a href="/commentary.json?family={{ r.family }}&model={{ r.model_file }}&show_manual={{ show_manual|lower }}&show_strip={{ show_strip|lower }}"
+       class="text-sm px-4 py-2 border border-violet-500/50 text-violet-200 rounded-lg hover:bg-violet-600/15">
+      (JSON)
     </a>
     {% endif %}
     <button onclick="window.print()" class="text-sm px-4 py-2 border border-white/15 text-slate-200 rounded-lg hover:bg-white/5">
@@ -354,6 +365,33 @@
         </tbody>
       </table>
     </div>
+  </section>
+  {% endif %}
+
+  {% if commentary %}
+  <section class="mt-6 rounded-lg border border-violet-200 bg-violet-50 p-4">
+    <details open>
+      <summary class="font-semibold text-violet-900 cursor-pointer">Commentary (engineering narrative)</summary>
+      <p class="text-xs text-violet-700 mt-1">
+        Deterministic narrative generated from the structured findings — every sentence
+        traces to a rule, verdict, or measurement. No AI-authored content.
+      </p>
+      <div class="mt-3 space-y-4">
+        {% for sec in commentary %}
+        <div>
+          <h3 class="text-sm font-semibold text-violet-900">{{ sec.title }}</h3>
+          {% for p in sec.paragraphs %}
+          <p class="text-sm text-slate-700 mt-1">{{ p }}</p>
+          {% endfor %}
+          {% if sec.id in ['manual', 'next_steps', 'proposed', 'strip'] and sec['items'] %}
+          <ul class="mt-1 text-sm text-slate-700 list-disc list-inside">
+            {% for it in sec['items'] %}{% if it.text %}<li>{{ it.text }}</li>{% endif %}{% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
   </section>
   {% endif %}
 

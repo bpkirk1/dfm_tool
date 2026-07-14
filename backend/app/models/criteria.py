@@ -52,6 +52,10 @@ class Rule(BaseModel):
     # Optional 3D-viewer marker tag. Decouples marker localization from rule ids
     # so renaming a rule in YAML doesn't silently break marker pinning.
     marker: str | None = None
+    # Optional plain-language consequence of violating this rule, used by the
+    # commentary generator. Must be implied by the rule's own metadata/source —
+    # not an invented manufacturing claim.
+    consequence: str | None = None
 
     def is_enforced(self, family_status: str = "active") -> bool:
         """A rule drives a verdict only if both it and its family are active."""
@@ -150,6 +154,22 @@ class Corrections(BaseModel):
     safety_margin: float = 0.10
 
 
+def _default_score_bands() -> list[dict[str, Any]]:
+    return [
+        {"min": 90, "label": "ready for tooling kickoff with minor follow-ups"},
+        {"min": 75, "label": "close to ready — a few corrections needed"},
+        {"min": 50, "label": "significant DFM work remains"},
+        {"min": 0, "label": "major redesign required before tooling"},
+    ]
+
+
+class Commentary(BaseModel):
+    """Config for the deterministic commentary generator (plain-language bands)."""
+
+    model_config = ConfigDict(extra="allow")
+    score_bands: list[dict[str, Any]] = Field(default_factory=_default_score_bands)
+
+
 class Meta(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: str = "1.0"
@@ -159,6 +179,7 @@ class Meta(BaseModel):
     notes: str | None = None
     scoring: Scoring = Field(default_factory=Scoring)
     corrections: Corrections = Field(default_factory=Corrections)
+    commentary: Commentary = Field(default_factory=Commentary)
 
 
 class CriteriaSet(BaseModel):

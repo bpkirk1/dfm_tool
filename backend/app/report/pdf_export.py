@@ -10,6 +10,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .. import config
+from ..commentary import build_commentary
 
 
 def render_report_pdf(
@@ -100,6 +101,22 @@ def render_report_pdf(
             )
         )
         story.append(ctable)
+
+    # Commentary narrative (deterministic; respects the same per-run toggles).
+    sections = build_commentary(report, show_manual=show_manual, show_strip=show_strip)
+    if sections:
+        story.append(Spacer(1, 14))
+        story.append(Paragraph("<b>Commentary</b>", styles["Heading3"]))
+        for sec in sections:
+            story.append(Paragraph(sec.title, styles["Heading4"]))
+            for para in sec.paragraphs:
+                story.append(Paragraph(para, styles["Normal"]))
+            if sec.id in ("manual", "next_steps", "proposed", "strip"):
+                for it in sec.items:
+                    text = it.get("text")
+                    if text:
+                        story.append(Paragraph(f"&bull; {text}", styles["Normal"]))
+            story.append(Spacer(1, 6))
 
     manual = summary.get("manual_check_parameters", [])
     if manual and show_manual:

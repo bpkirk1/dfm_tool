@@ -1,0 +1,5 @@
+A first-pass progressive strip layout was generated: {{ s.station_count }} station(s) at a {{ s.pitch_mm }} mm pitch{% if s.multi_up_pairs %}, {{ s.multi_up_pairs }} up{% endif %}.{% if s.width_utilization_pct is not none %} Estimated material width utilization is {{ s.width_utilization_pct }}%.{% endif %} This is a first-pass layout from the criteria config and forming data — confirm against tooling standards before cutting steel.
+{% if s.review_items %}
+
+The layout raised {{ s.review_items | length }} item(s) needing engineer confirmation (listed below).
+{% endif %}

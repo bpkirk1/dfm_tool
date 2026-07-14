@@ -1,0 +1,3 @@
+{{ part_name }} ({{ family }}) was evaluated against ruleset {{ ruleset_version }}{% if criteria_version is not none %} (criteria version {{ criteria_version }}){% endif %}. {% if score is not none %}The deterministic readiness score is {{ score }}% — {{ band_label }}.{% else %}No numeric readiness score was produced because no enforceable rule could be auto-measured from the supplied files.{% endif %}
+
+This run recorded {{ counts.get('fail', 0) }} critical finding{{ 's' if counts.get('fail', 0) != 1 else '' }}, {{ counts.get('flag', 0) }} flagged item{{ 's' if counts.get('flag', 0) != 1 else '' }}, and {{ counts.get('manual', 0) }} parameter{{ 's' if counts.get('manual', 0) != 1 else '' }} requiring manual verification.

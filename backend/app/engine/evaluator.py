@@ -39,6 +39,7 @@ class EvalResult:
     seen_count: int | None = None
     evidence: list[str] = field(default_factory=list)
     marker: str | None = None
+    consequence: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +59,7 @@ class EvalResult:
             "seen_count": self.seen_count,
             "evidence": self.evidence,
             "marker": self.marker,
+            "consequence": self.consequence,
         }
 
 
@@ -137,6 +139,7 @@ def _evaluate_rule(rule: Rule, features: dict[str, Any], scoring: Scoring) -> Ev
         seen_count=rule.seen_count,
         evidence=list(rule.evidence),
         marker=getattr(rule, "marker", None),
+        consequence=getattr(rule, "consequence", None),
     )
 
 
@@ -152,6 +155,7 @@ def _proposed_entry(rule: Rule) -> dict[str, Any]:
         "units": rule.units,
         "seen_count": rule.seen_count,
         "evidence": list(rule.evidence),
+        "consequence": getattr(rule, "consequence", None),
     }
 
 

@@ -16,6 +16,11 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from . import config
+from .commentary import (
+    build_commentary,
+    build_commentary_json,
+    build_commentary_markdown,
+)
 from .corrections import build_envelope, export_fixes_json, export_fixes_yaml
 from .diestrip import generate_strip_layout
 from .extractors import extract_step
@@ -333,6 +338,54 @@ def fixes_yaml(family: str = "stamping", model: str = ""):
     )
 
 
+# --- Phase 4: commentary downloads -------------------------------------------
+def _commentary_run(family: str, model: str, show_manual: bool, show_strip: bool):
+    """Rebuild the run from a saved/example STEP and generate commentary sections."""
+    _sync()
+    if not model:
+        raise ValueError("A model is required to generate commentary.")
+    path = _locate_model(model)
+    if path is None:
+        raise FileNotFoundError(model)
+    report = build_report(_store, RunInputs(step_path=path, family=family or None))
+    sections = build_commentary(report, show_manual=show_manual, show_strip=show_strip)
+    return report, sections
+
+
+@app.get("/commentary.md")
+def commentary_md(
+    family: str = "stamping", model: str = "",
+    show_manual: bool = True, show_strip: bool = True,
+):
+    try:
+        report, sections = _commentary_run(family, model, show_manual, show_strip)
+    except (ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    stem = Path(model).stem or "dfm"
+    return Response(
+        content=build_commentary_markdown(sections, report),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-commentary.md"'},
+    )
+
+
+@app.get("/commentary.json")
+def commentary_json(
+    family: str = "stamping", model: str = "",
+    show_manual: bool = True, show_strip: bool = True,
+):
+    try:
+        report, sections = _commentary_run(family, model, show_manual, show_strip)
+    except (ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    stem = Path(model).stem or "dfm"
+    return Response(
+        content=build_commentary_json(sections, report),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-commentary.json"'},
+    )
+
+
 def _sync() -> None:
     """Keep the store in step with the canonical YAML before each use."""
     if config.CRITERIA_SEED_PATH.exists():
@@ -436,7 +489,11 @@ async def evaluate(
         ),
     )
     _with_display(report, show_manual, show_strip)
-    return _render("report.html", r=report, show_manual=show_manual, show_strip=show_strip)
+    sections = build_commentary(report, show_manual=show_manual, show_strip=show_strip)
+    return _render(
+        "report.html", r=report, show_manual=show_manual, show_strip=show_strip,
+        commentary=[s.to_dict() for s in sections],
+    )
 
 
 @app.post("/api/evaluate")
@@ -562,7 +619,11 @@ def evaluate_example(
         RunInputs(step_path=step_path, pdf_path=pdf_path, family=family),
     )
     _with_display(report, show_manual, show_strip)
-    return _render("report.html", r=report, show_manual=show_manual, show_strip=show_strip)
+    sections = build_commentary(report, show_manual=show_manual, show_strip=show_strip)
+    return _render(
+        "report.html", r=report, show_manual=show_manual, show_strip=show_strip,
+        commentary=[s.to_dict() for s in sections],
+    )
 
 
 @app.post("/api/evaluate/example/{family}")

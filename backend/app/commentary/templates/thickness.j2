@@ -1,0 +1,7 @@
+{% if t.uniformity_status == 'anomalies' %}
+The model-derived stock gauge is {{ t.expected_thickness_mm }} mm (from {{ t.gauge_source }}), but {{ t.inconsistencies | length }} wall region(s) exceed the off-gauge threshold of {{ t.off_gauge_threshold_mm }} mm — a maximum deviation of {{ t.max_deviation_mm }} mm. Sheet stock is single-gauge, so this points to added material, a modeling error, or non-uniform stock; confirm against the drawing/material spec.
+{% elif t.uniformity_status == 'inconclusive' %}
+A stock gauge of {{ t.expected_thickness_mm }} mm was derived (from {{ t.gauge_source }}), but the geometry is feature-rich or not single-gauge sheet stock ({{ t.candidate_region_count }} candidate off-gauge regions across {{ t.wall_sample_count }} walls). Uniformity is reported as inconclusive rather than flagging false anomalies; confirm thickness against the drawing/material spec.
+{% else %}
+The model presents a uniform stock gauge of {{ t.expected_thickness_mm }} mm (from {{ t.gauge_source }}) across {{ t.wall_sample_count }} sampled walls, with no off-gauge regions detected.
+{% endif %}

@@ -33,6 +33,13 @@ meta:
   # scoring.marginal_fraction.
   corrections:
     safety_margin: 0.10
+  # Commentary generator: plain-language readiness bands (score >= min -> label).
+  commentary:
+    score_bands:
+      - {min: 90, label: "ready for tooling kickoff with minor follow-ups"}
+      - {min: 75, label: "close to ready — a few corrections needed"}
+      - {min: 50, label: "significant DFM work remains"}
+      - {min: 0,  label: "major redesign required before tooling"}
   # r1 (2026-06-19): Brian approved 14 of the mine.1 items (incl. tightening
   # MOLD-MIN-WALL-FILL 0.15->0.20 and loosening MOLD-MIN-CORNER-RADIUS 0.15->0.10)
   # and the whole cnc_machining family; 5 single-source items remain proposed.
@@ -103,6 +110,7 @@ process_families:
         limit: 0.04
         severity: major
         source: "P-233-1111-500 Note 2"
+        consequence: "excessive burr risks poor fit, handling injury, and interference at mating surfaces."
         supplier_adjustable: false
         # mine.2 (REVIEW_QUEUE D): no limit change. Hoky states a 0.02mm max burr
         # at t=0.05 C5210-EH (tighter than this 0.04 cap) — recorded as supplier
@@ -137,6 +145,7 @@ process_families:
         limit: 0.05                    # max wall deviation from the model-derived gauge
         severity: blocker
         source: "model-derived stock gauge (sheet stock is single-gauge; used when no 2D thickness spec)"
+        consequence: "non-uniform stock indicates a modeling or material error and undermines every downstream gauge-based check."
         supplier_adjustable: false
         marker: thickness              # 3D-viewer marker tag (decoupled from rule id)
 
@@ -195,6 +204,7 @@ process_families:
         limit: 0.2                     # sharp right angles crack when formed
         severity: major
         source: "PHD LP DFM compilation 2026-06-11 (stiffener): add R0.2 to right angles to avoid cracking"
+        consequence: "sharp right-angle inside corners crack when formed."
         supplier_adjustable: false
         marker: radius                 # 3D-viewer marker tag (decoupled from rule id)
       - id: STMP-BEND-TRANSITION-FLAT
@@ -234,6 +244,7 @@ process_families:
         limit: 0.15                    # PLACEHOLDER — confirm supplier capability
         severity: blocker
         source: "supplier capability (t=0.08 too thin for t-multiple rule); AJET DFM templet 2025-09-18 (Blanking) also calls min pin/land width >=0.15 mm"
+        consequence: "pierced features below the supplier minimum risk punch breakage and incomplete cutting."
         supplier_adjustable: true
         capability: {achieved_min: null, cpk: null, confirmed: false}
       - id: STMP-MIN-FEATURE-TO-EDGE
@@ -250,6 +261,7 @@ process_families:
         limit: 0.05                    # R0.05 typ appears on spring tabs; confirm
         severity: major
         source: "P-233-1111-500 Sht4 (R0.05) TYP — drawing min inside/form radius"
+        consequence: "too tight an inside/form radius risks cracking at the bend."
         supplier_adjustable: true
         marker: radius                 # 3D-viewer marker tag (decoupled from rule id)
         capability: {achieved_min: 0.08, cpk: null, confirmed: true}   # mine.2: Polygon R0.025->R0.08 SD-accepted 2026-05-29 (PGCD-004)
@@ -307,6 +319,7 @@ process_families:
         limit: 0.0                     # unfolded patches must not overlap — undevelopable if they do
         severity: blocker
         source: "flat-pattern development (patch overlap => the design cannot be developed to a flat blank)"
+        consequence: "overlapping unfolded patches mean the part cannot be developed to a flat blank."
         supplier_adjustable: false
 
       # ======================================================================

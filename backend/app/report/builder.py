@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..corrections import build_corrections
+from ..diestrip import generate_strip_layout
 from ..engine import evaluate_family
 from ..extractors import detect_family, extract_pdf, extract_step
 from ..flatpattern import analyze_flat
@@ -235,6 +236,21 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
     latest = store.latest()
     criteria_version = int(latest["id"]) if latest is not None else None
 
+    # First-pass strip layout for stamping runs (feeds the commentary + JSON).
+    # A layout quirk must never break the report.
+    strip = None
+    if family_name == "stamping":
+        try:
+            flat_bbox = None
+            if flat_result is not None and flat_result.flat_pattern.status == "ok":
+                flat_bbox = flat_result.flat_pattern.developed_bbox_mm
+            strip = generate_strip_layout(
+                family_name, family, geometry, criteria.meta.ruleset_version,
+                flat_developed_bbox_mm=flat_bbox,
+            ).to_dict()
+        except Exception:
+            strip = None
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "part_name": inputs.part_name
@@ -261,4 +277,7 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
         # Phase 3: deterministic correction advisor + provenance for the fix file.
         "corrections": [c.to_dict() for c in corrections],
         "criteria_version": criteria_version,
+        # Phase 4: first-pass strip layout (stamping) + commentary config.
+        "strip": strip,
+        "commentary_config": criteria.meta.commentary.model_dump(),
     }

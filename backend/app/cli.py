@@ -6,8 +6,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from . import config
+from .commentary import (
+    build_commentary,
+    build_commentary_json,
+    build_commentary_markdown,
+)
 from .corrections import build_envelope, export_fixes_json, export_fixes_yaml
 from .diestrip import generate_strip_layout
 from .extractors import extract_step
@@ -38,6 +44,11 @@ def main() -> int:
         metavar="OUT.json",
         help="Write the machine-readable fix file (.json or .yaml/.yml)",
     )
+    ap.add_argument(
+        "--commentary",
+        metavar="OUT.md",
+        help="Write the engineering commentary as Markdown (+ a sibling .json)",
+    )
     args = ap.parse_args()
 
     store = CriteriaStore(config.DB_PATH)
@@ -67,8 +78,6 @@ def main() -> int:
     report["display_options"] = {"show_manual": show_manual, "show_strip": show_strip}
 
     if args.fixes:
-        from pathlib import Path
-
         envelope = build_envelope(
             report.get("corrections", []),
             source_file=Path(args.step).name if args.step else None,
@@ -82,6 +91,16 @@ def main() -> int:
         else:
             out.write_text(export_fixes_json(envelope), encoding="utf-8")
         print(f"  wrote fix file : {args.fixes} ({len(envelope['corrections'])} corrections)")
+
+    if args.commentary:
+        sections = build_commentary(report, show_manual=show_manual, show_strip=show_strip)
+        md_path = Path(args.commentary)
+        md_path.write_text(build_commentary_markdown(sections, report), encoding="utf-8")
+        # Future-proofing hook: emit the raw sections as JSON alongside the .md so
+        # commentary can be mined back into proposed criteria without re-parsing prose.
+        json_path = md_path.with_suffix(".json")
+        json_path.write_text(build_commentary_json(sections, report), encoding="utf-8")
+        print(f"  wrote comment. : {md_path} (+ {json_path.name})")
 
     if args.json:
         print(json.dumps(report, indent=2, default=str))

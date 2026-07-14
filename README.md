@@ -155,6 +155,23 @@ formed-part bounding box.
 
 ## Changelog
 
+### 0.4.0 — commentary generator
+
+- Deterministic engineering-commentary layer (`backend/app/commentary/`): turns
+  the raw verdict table into reviewer-style prose (executive summary with a
+  config-driven readiness band, critical findings, flagged/marginal items,
+  manual checks, thickness narrative, strip notes, proposed criteria, next
+  steps). Every sentence is Jinja-rendered from structured report data — no
+  LLM, no network; wording is editable in `commentary/templates/*.j2`.
+- Optional `consequence:` field on rules (seeded for key stamping rules) feeds
+  the critical-findings prose; rules without one fall back to a generic
+  severity phrase. New `meta.commentary.score_bands` config drives the band.
+- Markdown export (front-matter + one `##` per section) and a paired
+  `commentary.json` (raw sections, for later re-ingestion) — downloadable from
+  the report page (`GET /commentary.md`, `/commentary.json`), appended to the
+  PDF, and writable from the CLI (`--commentary out.md`). Reports now also
+  carry a first-pass `strip` layout for stamping runs.
+
 ### 0.3.0 — correction advisor
 
 - Deterministic correction advisor (`backend/app/corrections/`): for every
