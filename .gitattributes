@@ -1,0 +1,25 @@
+# Normalize line endings: store text as LF in the repo, check out native on Windows.
+* text=auto eol=lf
+
+# Explicit text types (belt-and-suspenders for the files we actually edit).
+*.py    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+
+# Binary / CAD artifacts — never normalize.
+*.stp   binary
+*.step  binary
+*.STP   binary
+*.STEP  binary
+*.dwg   binary
+*.DWG   binary
+*.pptx  binary
+*.png   binary
+*.dxf   binary
+*.sqlite binary
