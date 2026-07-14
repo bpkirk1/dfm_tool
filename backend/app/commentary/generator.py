@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -191,6 +192,38 @@ def build_commentary(
                 "thickness",
                 "Model thickness observations",
                 _render("thickness.j2", t=thickness),
+            )
+        )
+
+    # 5b. Flat-state material (Phase 7 flat pattern) ------------------------
+    flat = report.get("flat_pattern")
+    if flat:
+        flat_results = [
+            r for r in results if (r.get("rule_id") or "").startswith("STMP-FLAT-")
+        ]
+        fc = Counter(r.get("verdict") for r in flat_results)
+        check_summary = ", ".join(
+            f"{fc[v]} {v}" for v in ("fail", "flag", "manual", "pass") if fc.get(v)
+        )
+        bbox = flat.get("developed_bbox_mm")
+        bbox_txt = " x ".join(f"{n:g}" for n in bbox) if bbox else None
+        sections.append(
+            CommentarySection(
+                id="flatpattern",
+                title="Flat-state material",
+                paragraphs=_render(
+                    "flatpattern.j2",
+                    fp=flat,
+                    bbox=bbox_txt,
+                    check_summary=check_summary,
+                    reasons="; ".join(flat.get("reasons") or []),
+                    assumptions="; ".join(flat.get("assumptions") or []),
+                ),
+                items=[
+                    {"rule_id": r.get("rule_id"), "parameter": r.get("parameter"),
+                     "verdict": r.get("verdict")}
+                    for r in flat_results
+                ],
             )
         )
 

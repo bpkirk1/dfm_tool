@@ -33,7 +33,7 @@ def _counts(results):
 
 
 def _report(results, *, score=None, proposed=None, bands=None, corrections=None,
-            thickness=None):
+            thickness=None, flat=None):
     return {
         "part_name": "P-TEST",
         "family": "stamping",
@@ -49,6 +49,7 @@ def _report(results, *, score=None, proposed=None, bands=None, corrections=None,
         },
         "corrections": corrections or [],
         "thickness": thickness,
+        "flat_pattern": flat,
         "strip": None,
         "commentary_config": {"score_bands": bands} if bands else {},
     }
@@ -134,6 +135,33 @@ def test_markdown_deterministic_apart_from_timestamp():
     md1 = build_commentary_markdown(s1, report, generated_at="2026-01-01T00:00:00+00:00")
     md2 = build_commentary_markdown(s2, report, generated_at="2026-01-01T00:00:00+00:00")
     assert md1 == md2
+
+
+def test_flat_state_section_ok():
+    results = [_res("STMP-FLAT-MIN-WEB", "flat_min_web_mm", "pass")]
+    flat = {"status": "ok", "developed_bend_count": 2, "k_factor_default": 0.4,
+            "developed_bbox_mm": [10.0, 20.0], "reasons": [],
+            "assumptions": ["treated fillets as sharp"]}
+    sec = _section(build_commentary(_report(results, score=90.0, flat=flat)), "flatpattern")
+    assert sec is not None
+    blob = " ".join(sec.paragraphs)
+    assert "flat blank" in blob and "K-factor" in blob
+
+
+def test_flat_state_section_partial_is_honest():
+    results = [_res("STMP-FLAT-MIN-WEB", "flat_min_web_mm", "manual")]
+    flat = {"status": "partial", "developed_bend_count": 0, "k_factor_default": 0.4,
+            "developed_bbox_mm": None, "reasons": ["bend adjacency ambiguous"],
+            "assumptions": []}
+    sec = _section(build_commentary(_report(results, flat=flat)), "flatpattern")
+    assert sec is not None
+    blob = " ".join(sec.paragraphs)
+    assert "partially developed" in blob and "ambiguous" in blob
+
+
+def test_no_flat_section_when_absent():
+    results = [_res("A", "gap", "pass")]
+    assert _section(build_commentary(_report(results, score=95.0)), "flatpattern") is None
 
 
 # --- endpoint smoke -----------------------------------------------------------

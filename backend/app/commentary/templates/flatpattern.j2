@@ -1,0 +1,11 @@
+{% if fp.status == 'ok' %}
+The formed part was developed to a flat blank — {{ fp.developed_bend_count }} bend(s) unfolded using a neutral-axis K-factor of {{ fp.k_factor_default }}{% if bbox %}, giving a developed envelope of {{ bbox }} mm{% endif %}.{% if check_summary %} Flat-state material checks: {{ check_summary }}.{% endif %}
+{% elif fp.status == 'partial' %}
+The flat pattern could only be partially developed, so the flat-state material checks that depend on the full blank are reported as manual items rather than passed.{% if reasons %} Reasons: {{ reasons }}.{% endif %}
+{% else %}
+A flat pattern could not be developed for this part, so the flat-state material checks are left for manual verification rather than passed.{% if reasons %} Reasons: {{ reasons }}.{% endif %}
+{% endif %}
+{% if assumptions %}
+
+Development assumptions: {{ assumptions }}.
+{% endif %}
