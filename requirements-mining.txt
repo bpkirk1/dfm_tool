@@ -1,0 +1,9 @@
+# Optional extras for the Phase 6 supplier-feedback miner (document parsing).
+# The core tool runs and passes all tests WITHOUT these installed; the miner's
+# .pptx/.xlsx readers simply report those files as unparsed until installed.
+#
+#   pip install -r requirements-mining.txt
+#
+# (.eml uses the stdlib; .pdf reuses pdfplumber from the core requirements.)
+python-pptx>=0.6.23
+openpyxl>=3.1

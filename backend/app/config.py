@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Application version-control identity (surfaced in every About panel / report).
 APP_NAME = "DFM & Design-Criteria Feedback Tool"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 
 # Upload guardrails (env-overridable like the other settings). Only these
 # extensions are accepted on write paths, and uploads above the size cap are

@@ -155,6 +155,28 @@ formed-part bounding box.
 
 ## Changelog
 
+### 0.6.0 — supplier-feedback miner (deterministic tooling)
+
+- New `backend/app/mining/` package that automates the mechanical parts of the
+  staged supplier-feedback workflow (`new_suggestions/06-supplier-feedback-mining.md`),
+  runnable as `python -m app.mining <extract|consolidate|emit>`:
+  - **Stage 1 extract** — parses `.pptx`/`.xlsx`/`.eml`/`.pdf` into a
+    provenance-rich `findings-<supplier>.jsonl` scaffold (doc, slide/sheet, date
+    + revision from filename, keyword-based process guess, detected numbers and
+    parameter hints, text/table/image-only confidence). Readers are optional and
+    lazy-imported; missing ones list files as unparsed rather than crashing.
+  - **Stage 2 consolidate** — groups curated findings by `parameter` into rule
+    candidates with `seen_count`/evidence, flags conflicting requested values,
+    extracts accepted values as capability (CTF) data, and queues image-only
+    items. Writes `consolidated.auto.md` + `.json`.
+  - **Stage 3 emit** — writes `proposed-rules.auto.yaml` (seed schema, everything
+    `status: proposed`), `ctf-entries.auto.json` (`dfm-ctf-import/1`), and a
+    `REVIEW_QUEUE.auto.md`. operator/limit/severity are auto-inferred and clearly
+    marked "confirm"; the miner never invents a value or activates a rule.
+- Optional extras: `pip install -r requirements-mining.txt` (python-pptx, openpyxl).
+- Tests in `backend/tests/test_mining.py`; `.pptx`/`.xlsx` cases skip when the
+  reader isn't installed.
+
 ### 0.5.0 — optional geometry correction (CAD kernel)
 
 - New **optional** geometry-correction backend (`backend/app/geometry/`): applies
