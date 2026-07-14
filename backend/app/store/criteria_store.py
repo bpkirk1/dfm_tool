@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS ctf_capability (
     status      TEXT,
     recorded_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS supplier_capability (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id      TEXT,
+    supplier     TEXT,
+    parameter    TEXT,
+    achieved_min REAL,
+    cpk          REAL,
+    confirmed    INTEGER,
+    context      TEXT,
+    evidence     TEXT,
+    recorded_at  TEXT NOT NULL
+);
 """
 
 
@@ -198,6 +210,61 @@ class CriteriaStore:
             "SELECT * FROM ctf_capability ORDER BY id DESC"
         )
         return [dict(r) for r in cur.fetchall()]
+
+    # -- Supplier capability (rule-keyed, dfm-ctf-import/1) --------------------
+
+    def record_capability(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Persist one capability record, routing by schema.
+
+        * Balloon/dimensional records (legacy ``ctf_capability``) carry a
+          ``balloon_id``.
+        * Supplier-capability records (``dfm-ctf-import/1``) are keyed to a rule
+          and/or a supplier and land in ``supplier_capability``.
+        """
+        if "balloon_id" in entry:
+            return {"kind": "ctf_capability", "id": self.record_ctf(entry)}
+        return {"kind": "supplier_capability", "id": self._record_supplier_capability(entry)}
+
+    def _record_supplier_capability(self, entry: dict[str, Any]) -> int:
+        confirmed = entry.get("confirmed")
+        evidence = entry.get("evidence")
+        cur = self._conn.execute(
+            "INSERT INTO supplier_capability "
+            "(rule_id, supplier, parameter, achieved_min, cpk, confirmed, "
+            " context, evidence, recorded_at) "
+            "VALUES (:rule_id,:supplier,:parameter,:achieved_min,:cpk,:confirmed,"
+            ":context,:evidence,:recorded_at)",
+            {
+                "rule_id": entry.get("rule_id"),
+                "supplier": entry.get("supplier"),
+                "parameter": entry.get("parameter"),
+                "achieved_min": entry.get("achieved_min"),
+                "cpk": entry.get("cpk"),
+                "confirmed": 1 if confirmed else 0 if confirmed is not None else None,
+                "context": entry.get("context"),
+                "evidence": json.dumps(evidence) if evidence is not None else None,
+                "recorded_at": _now(),
+            },
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def list_supplier_capability(self) -> list[dict[str, Any]]:
+        cur = self._conn.execute(
+            "SELECT * FROM supplier_capability ORDER BY id DESC"
+        )
+        out: list[dict[str, Any]] = []
+        for r in cur.fetchall():
+            row = dict(r)
+            if row.get("evidence"):
+                try:
+                    row["evidence"] = json.loads(row["evidence"])
+                except (ValueError, TypeError):
+                    pass
+            if row.get("confirmed") is not None:
+                row["confirmed"] = bool(row["confirmed"])
+            out.append(row)
+        return out
 
     def close(self) -> None:
         self._conn.close()

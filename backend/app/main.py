@@ -313,14 +313,30 @@ def criteria_diff(a: int, b: int):
 
 @app.get("/api/ctf")
 def list_ctf():
-    return {"ctf": _store.list_ctf()}
+    return {
+        "ctf": _store.list_ctf(),
+        "supplier_capability": _store.list_supplier_capability(),
+    }
 
 
 @app.post("/api/ctf")
 async def add_ctf(request: Request):
-    entry = await request.json()
-    new_id = _store.record_ctf(entry)
-    return {"id": new_id}
+    payload = await request.json()
+    # Accept either a single entry or a whole {schema, entries: [...]} document.
+    if isinstance(payload, dict) and isinstance(payload.get("entries"), list):
+        entries = payload["entries"]
+    elif isinstance(payload, list):
+        entries = payload
+    else:
+        entries = [payload]
+
+    results = [_store.record_capability(e) for e in entries]
+    return {
+        "count": len(results),
+        "ids": [r["id"] for r in results],
+        "kinds": sorted({r["kind"] for r in results}),
+        "results": results,
+    }
 
 
 @app.get("/health")
