@@ -91,6 +91,12 @@ process_families:
         severity: major
         source: "P-233-1111-500 Note 2"
         supplier_adjustable: false
+        # mine.2 (REVIEW_QUEUE D): no limit change. Hoky states a 0.02mm max burr
+        # at t=0.05 C5210-EH (tighter than this 0.04 cap) — recorded as supplier
+        # capability, awaiting FAI (see new_suggestions/mining/ctf-entries.json).
+        seen_count: 2
+        evidence:
+          - "mine.2 HOKY-012: 757-4311 A0 — 0.02mm max burr stated at t=0.05 C5210-EH (awaiting FAI)"
       - id: STMP-BURR-SPEC
         parameter: burr_height_specified_zone
         operator: lte
