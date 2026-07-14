@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ..corrections import build_corrections
 from ..engine import evaluate_family
 from ..extractors import detect_family, extract_pdf, extract_step
 from ..flatpattern import analyze_flat
@@ -226,6 +227,14 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
     if flat_result is not None:
         markers.extend(_flat_markers(flat_result.details, summary))
 
+    # Deterministic correction advisor: what each fail/flag would need to comply.
+    safety_margin = criteria.meta.corrections.safety_margin
+    corrections = build_corrections(
+        summary.to_dict()["results"], family_name, safety_margin
+    )
+    latest = store.latest()
+    criteria_version = int(latest["id"]) if latest is not None else None
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "part_name": inputs.part_name
@@ -249,4 +258,7 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
         "flat_pattern": flat_result.flat_pattern.to_dict() if flat_result else None,
         # Basename of the STEP model so the report can load it in the 3D viewer.
         "model_file": Path(inputs.step_path).name if inputs.step_path else None,
+        # Phase 3: deterministic correction advisor + provenance for the fix file.
+        "corrections": [c.to_dict() for c in corrections],
+        "criteria_version": criteria_version,
     }

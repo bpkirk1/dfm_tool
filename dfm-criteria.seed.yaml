@@ -28,6 +28,11 @@ meta:
     marginal_fraction: 0.10
     severity_weight: {blocker: 10.0, major: 5.0, minor: 2.0, info: 0.5}
     verdict_credit: {pass: 1.0, flag: 0.5, fail: 0.0}
+  # Correction advisor: safety margin nudges a compliant target just past the
+  # limit so a fixed value clears the marginal (flag) band. Keep aligned with
+  # scoring.marginal_fraction.
+  corrections:
+    safety_margin: 0.10
   # r1 (2026-06-19): Brian approved 14 of the mine.1 items (incl. tightening
   # MOLD-MIN-WALL-FILL 0.15->0.20 and loosening MOLD-MIN-CORNER-RADIUS 0.15->0.10)
   # and the whole cnc_machining family; 5 single-source items remain proposed.

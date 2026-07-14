@@ -128,3 +128,22 @@ def test_toggles_do_not_change_verdicts_or_score():
     assert base["counts"] == toggled["counts"]
     assert base["readiness_score"] == toggled["readiness_score"]
     assert len(base["results"]) == len(toggled["results"])
+
+
+# --- Phase 3: correction advisor ---------------------------------------------
+DEFECT_STEP = Path(__file__).resolve().parents[2] / "examples" / "bma_shield_defect.stp"
+
+
+def test_defect_example_produces_corrections():
+    data = DEFECT_STEP.read_bytes()
+    r = client.post(
+        "/api/evaluate",
+        files={"step_file": ("bma_shield_defect.stp", data, "application/octet-stream")},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert "corrections" in body
+    assert len(body["corrections"]) >= 1
+    # every correction cites a rule and carries a recommendation (provenance)
+    for c in body["corrections"]:
+        assert c["rule_id"] and c["recommendation"] and c["rationale"]

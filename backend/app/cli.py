@@ -8,6 +8,7 @@ import argparse
 import json
 
 from . import config
+from .corrections import build_envelope, export_fixes_json, export_fixes_yaml
 from .diestrip import generate_strip_layout
 from .extractors import extract_step
 from .report import RunInputs, build_report
@@ -32,6 +33,11 @@ def main() -> int:
     # change verdicts, the score, or what is evaluated/stored.
     ap.add_argument("--no-manual", action="store_true", help="Hide 'needs manual check' items")
     ap.add_argument("--no-strip", action="store_true", help="Suppress die-layout suggestions")
+    ap.add_argument(
+        "--fixes",
+        metavar="OUT.json",
+        help="Write the machine-readable fix file (.json or .yaml/.yml)",
+    )
     args = ap.parse_args()
 
     store = CriteriaStore(config.DB_PATH)
@@ -59,6 +65,23 @@ def main() -> int:
     show_manual = not args.no_manual
     show_strip = not args.no_strip
     report["display_options"] = {"show_manual": show_manual, "show_strip": show_strip}
+
+    if args.fixes:
+        from pathlib import Path
+
+        envelope = build_envelope(
+            report.get("corrections", []),
+            source_file=Path(args.step).name if args.step else None,
+            family=report.get("family"),
+            criteria_version=report.get("criteria_version"),
+            app_version=config.APP_VERSION,
+        )
+        out = Path(args.fixes)
+        if out.suffix.lower() in (".yaml", ".yml"):
+            out.write_text(export_fixes_yaml(envelope), encoding="utf-8")
+        else:
+            out.write_text(export_fixes_json(envelope), encoding="utf-8")
+        print(f"  wrote fix file : {args.fixes} ({len(envelope['corrections'])} corrections)")
 
     if args.json:
         print(json.dumps(report, indent=2, default=str))

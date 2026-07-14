@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from . import config
+from .corrections import build_envelope, export_fixes_json, export_fixes_yaml
 from .diestrip import generate_strip_layout
 from .extractors import extract_step
 from .flatpattern import analyze_flat, render_dxf, render_png, render_svg
@@ -276,6 +277,59 @@ def flat_dxf(family: str = "stamping", model: str = ""):
         content=dxf,
         media_type="application/dxf",
         headers={"Content-Disposition": f'attachment; filename="{stem}-flat.dxf"'},
+    )
+
+
+# --- Phase 3: correction fix-file downloads ----------------------------------
+def _build_fixes(family: str, model: str) -> dict:
+    """Rebuild the run from a saved/example STEP and assemble the fix-file envelope.
+
+    Server-side (consistent with the PDF/flat download flow) so the fix file
+    carries the same provenance chain (criteria version + app version).
+    """
+    _sync()
+    if not model:
+        raise ValueError("A model is required to export a fix file.")
+    path = _locate_model(model)
+    if path is None:
+        raise FileNotFoundError(model)
+    report = build_report(
+        _store, RunInputs(step_path=path, family=family or None)
+    )
+    return build_envelope(
+        report.get("corrections", []),
+        source_file=Path(model).name,
+        family=report.get("family"),
+        criteria_version=report.get("criteria_version"),
+        app_version=config.APP_VERSION,
+    )
+
+
+@app.get("/fixes.json")
+def fixes_json(family: str = "stamping", model: str = ""):
+    try:
+        envelope = _build_fixes(family, model)
+    except (ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    stem = Path(model).stem or "dfm"
+    return Response(
+        content=export_fixes_json(envelope),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-fixes.json"'},
+    )
+
+
+@app.get("/fixes.yaml")
+def fixes_yaml(family: str = "stamping", model: str = ""):
+    try:
+        envelope = _build_fixes(family, model)
+    except (ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    stem = Path(model).stem or "dfm"
+    return Response(
+        content=export_fixes_yaml(envelope),
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-fixes.yaml"'},
     )
 
 

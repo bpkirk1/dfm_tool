@@ -138,6 +138,18 @@ class Scoring(BaseModel):
     )
 
 
+class Corrections(BaseModel):
+    """Config for the deterministic correction advisor.
+
+    ``safety_margin`` nudges a compliant target just past the limit so a fixed
+    value doesn't land back in the evaluator's marginal (flag) band. Defaults to
+    the same fraction the evaluator uses.
+    """
+
+    model_config = ConfigDict(extra="allow")
+    safety_margin: float = 0.10
+
+
 class Meta(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: str = "1.0"
@@ -146,6 +158,7 @@ class Meta(BaseModel):
     last_edited_by: str = "seed"
     notes: str | None = None
     scoring: Scoring = Field(default_factory=Scoring)
+    corrections: Corrections = Field(default_factory=Corrections)
 
 
 class CriteriaSet(BaseModel):

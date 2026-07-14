@@ -155,6 +155,18 @@ formed-part bounding box.
 
 ## Changelog
 
+### 0.3.0 — correction advisor
+
+- Deterministic correction advisor (`backend/app/corrections/`): for every
+  fail/flag it computes a compliant target (limit + config `safety_margin`),
+  worst-first, with a template-built recommendation citing the rule source.
+  No AI, no fabricated numbers — free-text/uncomputable findings become
+  "review" items.
+- Machine-readable fix file (`dfm-fixes/1` envelope) with full provenance
+  (criteria version + app version); downloadable JSON/YAML from the report,
+  `--fixes out.json` on the CLI, and included in the `/api/evaluate` payload.
+- Corrections section in the HTML report and PDF.
+
 ### 0.2.0 — hardening pass
 
 - Input validation on all write paths: uploads are filename-sanitized (no path

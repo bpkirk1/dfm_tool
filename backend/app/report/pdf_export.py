@@ -71,6 +71,36 @@ def render_report_pdf(
     )
     story.append(table)
 
+    corrections = report.get("corrections", [])
+    if corrections:
+        story.append(Spacer(1, 14))
+        story.append(Paragraph("<b>Recommended corrections</b>", styles["Heading3"]))
+        crows = [["Parameter", "Current", "Target", "Direction", "Recommendation"]]
+        for c in corrections:
+            target = c.get("target_value")
+            crows.append(
+                [
+                    c.get("parameter", ""),
+                    "—" if c.get("current_value") is None else str(c.get("current_value")),
+                    "review" if target is None else str(target),
+                    c.get("direction", ""),
+                    (c.get("recommendation") or "")[:90],
+                ]
+            )
+        ctable = Table(crows, repeatRows=1, colWidths=[95, 55, 55, 55, 240])
+        ctable.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0369a1")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(ctable)
+
     manual = summary.get("manual_check_parameters", [])
     if manual and show_manual:
         story.append(Spacer(1, 12))
