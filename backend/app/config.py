@@ -6,7 +6,13 @@ from pathlib import Path
 
 # Application version-control identity (surfaced in every About panel / report).
 APP_NAME = "DFM & Design-Criteria Feedback Tool"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
+
+# Upload guardrails (env-overridable like the other settings). Only these
+# extensions are accepted on write paths, and uploads above the size cap are
+# rejected with HTTP 400.
+MAX_UPLOAD_MB = int(os.environ.get("DFM_MAX_UPLOAD_MB", "50"))
+ALLOWED_UPLOAD_EXTENSIONS = {".stp", ".step", ".pdf", ".hlg"}
 
 # repo root = two levels up from this file (backend/app/config.py -> repo root)
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,6 +75,10 @@ class CriteriaStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # One shared connection with check_same_thread=False can race under
+        # FastAPI's threadpool. Serialize all writes with a re-entrant lock
+        # (re-entrant so sync_from_yaml -> save_version doesn't self-deadlock).
+        self._write_lock = threading.RLock()
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 
@@ -102,35 +107,37 @@ class CriteriaStore:
         if problems:
             raise ValueError("Refusing to store invalid criteria: " + "; ".join(problems))
 
-        cur = self._conn.execute(
-            "INSERT INTO criteria_versions "
-            "(ruleset_version, author, reason, created_at, content_hash, content_yaml) "
-            "VALUES (?,?,?,?,?,?)",
-            (
-                cs.meta.ruleset_version,
-                author,
-                reason,
-                _now(),
-                _hash(content_yaml),
-                content_yaml,
-            ),
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
+        with self._write_lock:
+            cur = self._conn.execute(
+                "INSERT INTO criteria_versions "
+                "(ruleset_version, author, reason, created_at, content_hash, content_yaml) "
+                "VALUES (?,?,?,?,?,?)",
+                (
+                    cs.meta.ruleset_version,
+                    author,
+                    reason,
+                    _now(),
+                    _hash(content_yaml),
+                    content_yaml,
+                ),
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def sync_from_yaml(self, yaml_path: str | Path) -> dict[str, Any]:
         """Import the YAML as a new version iff it changed since the last sync."""
         yaml_path = Path(yaml_path)
         content = yaml_path.read_text(encoding="utf-8")
         h = _hash(content)
-        latest = self.latest()
-        if latest is not None and latest["content_hash"] == h:
-            return {"changed": False, "version_id": latest["id"]}
-        reason = (
-            "Initial seed import" if latest is None else "YAML edited — re-imported"
-        )
-        vid = self.save_version(content, author="file-sync", reason=reason)
-        return {"changed": True, "version_id": vid}
+        with self._write_lock:
+            latest = self.latest()
+            if latest is not None and latest["content_hash"] == h:
+                return {"changed": False, "version_id": latest["id"]}
+            reason = (
+                "Initial seed import" if latest is None else "YAML edited — re-imported"
+            )
+            vid = self.save_version(content, author="file-sync", reason=reason)
+            return {"changed": True, "version_id": vid}
 
     def get_criteria(self, version_id: int | None = None) -> CriteriaSet:
         if version_id is None:
@@ -182,6 +189,10 @@ class CriteriaStore:
     # -- CTF capability -------------------------------------------------------
 
     def record_ctf(self, entry: dict[str, Any]) -> int:
+        with self._write_lock:
+            return self._insert_ctf(entry)
+
+    def _insert_ctf(self, entry: dict[str, Any]) -> int:
         cur = self._conn.execute(
             "INSERT INTO ctf_capability "
             "(balloon_id, family, nominal, tol_plus, tol_minus, drawing_sheet, "
@@ -228,26 +239,27 @@ class CriteriaStore:
     def _record_supplier_capability(self, entry: dict[str, Any]) -> int:
         confirmed = entry.get("confirmed")
         evidence = entry.get("evidence")
-        cur = self._conn.execute(
-            "INSERT INTO supplier_capability "
-            "(rule_id, supplier, parameter, achieved_min, cpk, confirmed, "
-            " context, evidence, recorded_at) "
-            "VALUES (:rule_id,:supplier,:parameter,:achieved_min,:cpk,:confirmed,"
-            ":context,:evidence,:recorded_at)",
-            {
-                "rule_id": entry.get("rule_id"),
-                "supplier": entry.get("supplier"),
-                "parameter": entry.get("parameter"),
-                "achieved_min": entry.get("achieved_min"),
-                "cpk": entry.get("cpk"),
-                "confirmed": 1 if confirmed else 0 if confirmed is not None else None,
-                "context": entry.get("context"),
-                "evidence": json.dumps(evidence) if evidence is not None else None,
-                "recorded_at": _now(),
-            },
-        )
-        self._conn.commit()
-        return int(cur.lastrowid)
+        with self._write_lock:
+            cur = self._conn.execute(
+                "INSERT INTO supplier_capability "
+                "(rule_id, supplier, parameter, achieved_min, cpk, confirmed, "
+                " context, evidence, recorded_at) "
+                "VALUES (:rule_id,:supplier,:parameter,:achieved_min,:cpk,:confirmed,"
+                ":context,:evidence,:recorded_at)",
+                {
+                    "rule_id": entry.get("rule_id"),
+                    "supplier": entry.get("supplier"),
+                    "parameter": entry.get("parameter"),
+                    "achieved_min": entry.get("achieved_min"),
+                    "cpk": entry.get("cpk"),
+                    "confirmed": 1 if confirmed else 0 if confirmed is not None else None,
+                    "context": entry.get("context"),
+                    "evidence": json.dumps(evidence) if evidence is not None else None,
+                    "recorded_at": _now(),
+                },
+            )
+            self._conn.commit()
+            return int(cur.lastrowid)
 
     def list_supplier_capability(self) -> list[dict[str, Any]]:
         cur = self._conn.execute(
@@ -282,5 +294,14 @@ def _flatten_rules(cs: CriteriaSet) -> dict[str, dict[str, Any]]:
                 "limit": rule.limit,
                 "severity": rule.severity,
                 "supplier_adjustable": rule.supplier_adjustable,
+                # Governance/capability fields so status flips and capability
+                # confirmations show up as "changed" in a version diff.
+                "status": rule.status,
+                "capability_confirmed": (
+                    rule.capability.confirmed if rule.capability else None
+                ),
+                "capability_achieved_min": (
+                    rule.capability.achieved_min if rule.capability else None
+                ),
             }
     return out

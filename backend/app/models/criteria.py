@@ -49,6 +49,9 @@ class Rule(BaseModel):
     status: str = "active"
     seen_count: int | None = None
     evidence: list[str] = Field(default_factory=list)
+    # Optional 3D-viewer marker tag. Decouples marker localization from rule ids
+    # so renaming a rule in YAML doesn't silently break marker pinning.
+    marker: str | None = None
 
     def is_enforced(self, family_status: str = "active") -> bool:
         """A rule drives a verdict only if both it and its family are active."""
@@ -116,6 +119,25 @@ class ProcessFamily(BaseModel):
             self.form_angles = [FormAngle(**a) for a in raw]
 
 
+class Scoring(BaseModel):
+    """Tunable scoring constants for the evaluator.
+
+    These materially affect verdicts (marginal band) and the readiness score, so
+    per architectural rule #1 they live in config, not code. The defaults here
+    mirror the historical in-code values so a YAML without a ``scoring:`` block
+    behaves exactly as before.
+    """
+
+    model_config = ConfigDict(extra="allow")
+    marginal_fraction: float = 0.10
+    severity_weight: dict[str, float] = Field(
+        default_factory=lambda: {"blocker": 10.0, "major": 5.0, "minor": 2.0, "info": 0.5}
+    )
+    verdict_credit: dict[str, float] = Field(
+        default_factory=lambda: {"pass": 1.0, "flag": 0.5, "fail": 0.0}
+    )
+
+
 class Meta(BaseModel):
     model_config = ConfigDict(extra="allow")
     schema_version: str = "1.0"
@@ -123,6 +145,7 @@ class Meta(BaseModel):
     units: str = "mm"
     last_edited_by: str = "seed"
     notes: str | None = None
+    scoring: Scoring = Field(default_factory=Scoring)
 
 
 class CriteriaSet(BaseModel):

@@ -98,11 +98,16 @@ def _cylinders(ents: dict[int, tuple[str, str]]) -> list[tuple[Vec, Vec, float]]
     for eid, (typ, body) in ents.items():
         if typ != "CYLINDRICAL_SURFACE":
             continue
-        r = _refs(body)
-        radius = float(_NUM.findall(body)[-1])
-        axr = _refs(ents[r[0]][1])
-        loc = _coords(ents, axr[0])
-        axis = _unit(_coords(ents, axr[1]))
+        # Skip malformed/incomplete records (dangling refs, no radius) rather than
+        # letting a single bad export line abort the whole analysis.
+        try:
+            r = _refs(body)
+            radius = float(_NUM.findall(body)[-1])
+            axr = _refs(ents[r[0]][1])
+            loc = _coords(ents, axr[0])
+            axis = _unit(_coords(ents, axr[1]))
+        except (KeyError, IndexError, ValueError):
+            continue
         cyls.append((loc, axis, radius))
     return cyls
 
@@ -181,12 +186,18 @@ def _planar_faces(
     for eid, (typ, body) in ents.items():
         if typ != "ADVANCED_FACE":
             continue
-        surf = _refs(body)[-1]
-        if surf not in ents or ents[surf][0] != "PLANE":
-            continue
-        ax = _refs(ents[surf][1])[0]
-        normal = _unit(_coords(ents, _refs(ents[ax][1])[1]))
-        pts = _vertex_points(ents, eid, cache)
+        try:
+            refs = _refs(body)
+            if not refs:
+                continue
+            surf = refs[-1]
+            if surf not in ents or ents[surf][0] != "PLANE":
+                continue
+            ax = _refs(ents[surf][1])[0]
+            normal = _unit(_coords(ents, _refs(ents[ax][1])[1]))
+            pts = _vertex_points(ents, eid, cache)
+        except (KeyError, IndexError, ValueError):
+            continue  # malformed face record — skip, don't abort the scan
         if len(pts) < 3:
             continue
         c = (

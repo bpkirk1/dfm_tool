@@ -10,12 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..models.criteria import ProcessFamily, Rule
+from ..models.criteria import ProcessFamily, Rule, Scoring
 from .operators import apply_operator
 
-# A passing value this close (fractionally) to its limit is downgraded to a flag.
+# In-code fallbacks (mirror Scoring defaults). The live values come from the YAML
+# `meta.scoring` block so verdicts/score are config-driven (architectural rule #1);
+# these are only used when no scoring is supplied (e.g. a direct unit-test call).
 MARGINAL_FRACTION = 0.10
-
 SEVERITY_WEIGHT = {"blocker": 10.0, "major": 5.0, "minor": 2.0, "info": 0.5}
 VERDICT_CREDIT = {"pass": 1.0, "flag": 0.5, "fail": 0.0}
 
@@ -37,6 +38,7 @@ class EvalResult:
     note: str = ""
     seen_count: int | None = None
     evidence: list[str] = field(default_factory=list)
+    marker: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +57,7 @@ class EvalResult:
             "note": self.note,
             "seen_count": self.seen_count,
             "evidence": self.evidence,
+            "marker": self.marker,
         }
 
 
@@ -81,18 +84,18 @@ class ReportSummary:
         }
 
 
-def _is_marginal(margin: float | None, limit: Any) -> bool:
+def _is_marginal(margin: float | None, limit: Any, marginal_fraction: float) -> bool:
     if margin is None or margin < 0:
         return False
     try:
         ref = abs(float(limit))
     except (TypeError, ValueError):
         return False
-    band = MARGINAL_FRACTION * ref if ref > 0 else MARGINAL_FRACTION
+    band = marginal_fraction * ref if ref > 0 else marginal_fraction
     return margin < band
 
 
-def _evaluate_rule(rule: Rule, features: dict[str, Any]) -> EvalResult:
+def _evaluate_rule(rule: Rule, features: dict[str, Any], scoring: Scoring) -> EvalResult:
     value = features.get(rule.parameter)
     limit = rule.effective_limit()
     outcome = apply_operator(rule.operator, value, limit)
@@ -113,7 +116,7 @@ def _evaluate_rule(rule: Rule, features: dict[str, Any]) -> EvalResult:
         ):
             verdict = "flag"
             note = "Limit is an unconfirmed supplier-capability placeholder — confirm at FAI."
-        elif _is_marginal(outcome.margin, limit):
+        elif _is_marginal(outcome.margin, limit, scoring.marginal_fraction):
             verdict = "flag"
             note = "Within margin of the limit — marginal."
 
@@ -133,6 +136,7 @@ def _evaluate_rule(rule: Rule, features: dict[str, Any]) -> EvalResult:
         note=note,
         seen_count=rule.seen_count,
         evidence=list(rule.evidence),
+        marker=getattr(rule, "marker", None),
     )
 
 
@@ -156,7 +160,11 @@ def evaluate_family(
     family: ProcessFamily,
     features: dict[str, Any],
     ruleset_version: str = "unknown",
+    scoring: Scoring | None = None,
 ) -> ReportSummary:
+    # Config-driven scoring (architectural rule #1). A missing block falls back
+    # to the historical defaults, so behavior is unchanged without one.
+    scoring = scoring or Scoring()
     family_status = getattr(family, "status", "active")
 
     # Only `active` rules in an `active` family drive a verdict/score. Everything
@@ -166,7 +174,7 @@ def evaluate_family(
         _proposed_entry(r) for r in family.rules if not r.is_enforced(family_status)
     ]
 
-    results = [_evaluate_rule(rule, features) for rule in enforced]
+    results = [_evaluate_rule(rule, features, scoring) for rule in enforced]
 
     counts = {"pass": 0, "flag": 0, "fail": 0, "manual": 0}
     for r in results:
@@ -176,9 +184,9 @@ def evaluate_family(
     for r in results:
         if r.verdict == "manual":
             continue
-        w = SEVERITY_WEIGHT.get(r.severity, 1.0)
+        w = scoring.severity_weight.get(r.severity, 1.0)
         possible += w
-        earned += w * VERDICT_CREDIT[r.verdict]
+        earned += w * scoring.verdict_credit.get(r.verdict, 0.0)
     score = round(100.0 * earned / possible, 1) if possible else None
 
     manual_params = [r.parameter for r in results if r.verdict == "manual"]

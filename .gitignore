@@ -10,6 +10,7 @@ venv/
 uploads/
 *.sqlite
 *.sqlite3
+criteria/*.sqlite
 criteria/older_files/
 
 # Examples folder: allowlist only. Everything here is proprietary by default;

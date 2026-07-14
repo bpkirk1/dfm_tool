@@ -57,9 +57,12 @@ def _radius_marker(
         return None
 
     # The worst-verdict radius rule drives the marker color and click-target.
+    # Prefer rules tagged `marker: radius`; fall back to the parameter name so a
+    # renamed rule still pins as long as it either carries the tag or the param.
     worst = None
     for r in summary.results:
-        if r.parameter != _RADIUS_PARAM or r.verdict not in ("fail", "flag"):
+        is_radius = getattr(r, "marker", None) == "radius" or r.parameter == _RADIUS_PARAM
+        if not is_radius or r.verdict not in ("fail", "flag"):
             continue
         if worst is None or _VERDICT_RANK[r.verdict] > _VERDICT_RANK[worst.verdict]:
             worst = r
@@ -88,18 +91,28 @@ def _build_markers(thickness: dict[str, Any] | None, summary: Any) -> list[dict[
     if not thickness:
         return markers
 
+    # Prefer the rule tagged `marker: thickness`; fall back to the id constant so
+    # renaming the rule in YAML doesn't break marker pinning (as long as the tag
+    # is present, or the historical id is kept).
     verdict = "fail"
-    for r in summary.results:
-        if r.rule_id == _THICKNESS_RULE_ID:
-            verdict = r.verdict
-            break
+    thickness_rule_id = _THICKNESS_RULE_ID
+    tagged = next(
+        (r for r in summary.results if getattr(r, "marker", None) == "thickness"), None
+    )
+    if tagged is None:
+        tagged = next(
+            (r for r in summary.results if r.rule_id == _THICKNESS_RULE_ID), None
+        )
+    if tagged is not None:
+        verdict = tagged.verdict
+        thickness_rule_id = tagged.rule_id
 
     gauge = thickness.get("expected_thickness_mm")
     for i, reg in enumerate(thickness.get("inconsistencies") or [], 1):
         t = reg.get("thickness_mm")
         markers.append(
             {
-                "rule_id": _THICKNESS_RULE_ID,
+                "rule_id": thickness_rule_id,
                 "verdict": verdict,
                 "location": reg.get("location"),
                 "value_mm": t,
@@ -175,7 +188,11 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
             features.setdefault("_flat_error", str(exc))
 
     summary = evaluate_family(
-        family_name, family, features, ruleset_version=criteria.meta.ruleset_version
+        family_name,
+        family,
+        features,
+        ruleset_version=criteria.meta.ruleset_version,
+        scoring=criteria.meta.scoring,
     )
 
     # Surface the unfold reasons in the manual detail of the flat rules, so the

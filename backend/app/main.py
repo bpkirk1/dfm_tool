@@ -6,14 +6,14 @@ later without touching the engine or API.
 """
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from . import config
 from .diestrip import generate_strip_layout
@@ -39,6 +39,56 @@ _store = CriteriaStore(config.DB_PATH)
 
 def _render(template: str, **context) -> HTMLResponse:
     return HTMLResponse(_ENV.get_template(template).render(**context))
+
+
+# --- CTF / capability import payload validation (item 1) ----------------------
+class _CtfBalloonIn(BaseModel):
+    """Legacy balloon-keyed dimensional CTF record."""
+
+    model_config = ConfigDict(extra="allow")
+    balloon_id: str
+    family: str | None = None
+    nominal: float | None = None
+    tol_plus: float | None = None
+    tol_minus: float | None = None
+    drawing_sheet: str | None = None
+    cpk_target: float | None = None
+    cpk_actual: float | None = None
+    sample_n: int | None = None
+    status: str | None = None
+
+
+class _SupplierCapabilityIn(BaseModel):
+    """Rule-keyed supplier-capability record (dfm-ctf-import/1)."""
+
+    model_config = ConfigDict(extra="forbid")
+    rule_id: str | None = None
+    supplier: str | None = None
+    parameter: str | None = None
+    achieved_min: float | None = None
+    cpk: float | None = None
+    confirmed: bool | None = None
+    context: str | None = None
+    evidence: list[str] | None = None
+
+    @model_validator(mode="after")
+    def _need_identifier(self) -> "_SupplierCapabilityIn":
+        if not (self.rule_id or self.supplier or self.parameter):
+            raise ValueError(
+                "entry needs at least one of rule_id, supplier, or parameter"
+            )
+        return self
+
+
+def _validate_ctf_entry(entry: object) -> dict:
+    if not isinstance(entry, dict):
+        raise HTTPException(status_code=400, detail="Each CTF entry must be an object.")
+    try:
+        if "balloon_id" in entry:
+            return _CtfBalloonIn(**entry).model_dump()
+        return _SupplierCapabilityIn(**entry).model_dump()
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid CTF entry: {exc}") from exc
 
 
 # Static assets (3D viewer JS, etc.).
@@ -246,11 +296,51 @@ def index(request: Request):
 
 
 def _save_upload(upload: UploadFile | None) -> Optional[Path]:
+    """Persist an upload safely: no path traversal, allowed extensions only,
+    and enforce the max upload size. Rejections raise HTTP 400."""
     if upload is None or not upload.filename:
         return None
-    dest = config.UPLOAD_DIR / upload.filename
-    with dest.open("wb") as fh:
-        shutil.copyfileobj(upload.file, fh)
+    raw = upload.filename
+    # Reject anything that carries a path (…/ or ..\ or a drive) outright rather
+    # than silently rewriting it — a path component means the caller is misbehaving.
+    if raw != Path(raw).name:
+        raise HTTPException(
+            status_code=400, detail="Invalid filename: path components are not allowed."
+        )
+    safe = Path(raw).name
+    if not safe or safe in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid or empty filename.")
+    ext = Path(safe).suffix.lower()
+    if ext not in config.ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported file type '{ext or '(none)'}'. Allowed: "
+                + ", ".join(sorted(config.ALLOWED_UPLOAD_EXTENSIONS))
+            ),
+        )
+    dest = (config.UPLOAD_DIR / safe).resolve()
+    if dest.parent != config.UPLOAD_DIR.resolve():
+        raise HTTPException(status_code=400, detail="Invalid upload path.")
+
+    max_bytes = config.MAX_UPLOAD_MB * 1024 * 1024
+    written = 0
+    try:
+        with dest.open("wb") as fh:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Upload exceeds the {config.MAX_UPLOAD_MB} MB limit.",
+                    )
+                fh.write(chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)  # don't leave a partial/oversized file behind
+        raise
     return dest
 
 
@@ -308,7 +398,11 @@ def criteria_versions():
 
 @app.get("/api/criteria/diff")
 def criteria_diff(a: int, b: int):
-    return _store.diff_versions(a, b)
+    _sync()
+    try:
+        return _store.diff_versions(a, b)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/ctf")
@@ -330,7 +424,8 @@ async def add_ctf(request: Request):
     else:
         entries = [payload]
 
-    results = [_store.record_capability(e) for e in entries]
+    validated = [_validate_ctf_entry(e) for e in entries]
+    results = [_store.record_capability(e) for e in validated]
     return {
         "count": len(results),
         "ids": [r["id"] for r in results],

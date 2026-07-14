@@ -152,3 +152,24 @@ formed-part bounding box.
 
 - Criteria editor UI over the versioned store; CTF/SPC capability import that
   flags rules where supplier capability differs from drawing tolerance.
+
+## Changelog
+
+### 0.2.0 — hardening pass
+
+- Input validation on all write paths: uploads are filename-sanitized (no path
+  traversal), extension-allowlisted, and size-capped (`DFM_MAX_UPLOAD_MB`, default
+  50); `GET /api/criteria/diff` returns 404 (not 500) for unknown versions;
+  `POST /api/ctf` validates against Pydantic models.
+- Scoring constants (`marginal_fraction`, `severity_weight`, `verdict_credit`)
+  moved into `meta.scoring` in the YAML — verdicts/score are now fully
+  config-driven, with in-code fallbacks for older files.
+- 3D-viewer marker pinning decoupled from rule ids via an optional `marker:` tag
+  (renaming a rule no longer breaks markers).
+- SQLite writes serialized with a re-entrant lock (thread-safe under the
+  FastAPI threadpool); version diff now reports `status`/`capability` changes.
+- New test coverage for the thickness extractor, criteria store, and API layer;
+  malformed STEP records are skipped instead of aborting analysis. Repo cleanup
+  (removed stray DB + archived seed duplicates).
+
+### 0.1.0 — initial DFM feedback + flat-pattern module.

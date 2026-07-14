@@ -20,6 +20,14 @@ meta:
   ruleset_version: "2026.07.13-r2"
   units: mm                      # angles in degrees, Ra in micro-inch where noted
   last_edited_by: cowork-dfm-agent
+  # Scoring constants for the deterministic evaluator. Config-driven (never
+  # hardcoded): marginal_fraction sets the pass->flag band; severity_weight and
+  # verdict_credit drive the 0-100 readiness score. Omit this block to use the
+  # historical defaults shown below.
+  scoring:
+    marginal_fraction: 0.10
+    severity_weight: {blocker: 10.0, major: 5.0, minor: 2.0, info: 0.5}
+    verdict_credit: {pass: 1.0, flag: 0.5, fail: 0.0}
   # r1 (2026-06-19): Brian approved 14 of the mine.1 items (incl. tightening
   # MOLD-MIN-WALL-FILL 0.15->0.20 and loosening MOLD-MIN-CORNER-RADIUS 0.15->0.10)
   # and the whole cnc_machining family; 5 single-source items remain proposed.
@@ -125,6 +133,7 @@ process_families:
         severity: blocker
         source: "model-derived stock gauge (sheet stock is single-gauge; used when no 2D thickness spec)"
         supplier_adjustable: false
+        marker: thickness              # 3D-viewer marker tag (decoupled from rule id)
 
       # --- AJET DFM review template (Concern & Proposal), update 2025-09-18 ----
       - id: STMP-CUTOFF-STRAIGHT-MIN
@@ -182,6 +191,7 @@ process_families:
         severity: major
         source: "PHD LP DFM compilation 2026-06-11 (stiffener): add R0.2 to right angles to avoid cracking"
         supplier_adjustable: false
+        marker: radius                 # 3D-viewer marker tag (decoupled from rule id)
       - id: STMP-BEND-TRANSITION-FLAT
         parameter: bend_transition_location
         operator: eq
@@ -236,6 +246,7 @@ process_families:
         severity: major
         source: "P-233-1111-500 Sht4 (R0.05) TYP — drawing min inside/form radius"
         supplier_adjustable: true
+        marker: radius                 # 3D-viewer marker tag (decoupled from rule id)
         capability: {achieved_min: 0.08, cpk: null, confirmed: true}   # mine.2: Polygon R0.025->R0.08 SD-accepted 2026-05-29 (PGCD-004)
         # mine.1: field DFMs corroborate the ~R0.05 stamping floor (R0.025 not achievable)
         # mine.2 CONFLICT NOTE (Brian-approved): where function demands, a sharp

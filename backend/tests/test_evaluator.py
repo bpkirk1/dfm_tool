@@ -1,5 +1,5 @@
 from app.engine.evaluator import evaluate_family
-from app.models.criteria import ProcessFamily
+from app.models.criteria import ProcessFamily, Scoring
 
 
 def _family():
@@ -60,3 +60,49 @@ def test_score_is_zero_to_hundred():
     summary = evaluate_family("stamping", _family(), {"burr": 0.06, "gap": 0.20, "pierce": 0.30}, "v")
     assert summary.readiness_score is not None
     assert 0.0 <= summary.readiness_score <= 100.0
+
+
+def _marginal_family():
+    # A single gte rule; a measured value just above the limit lands in the flag
+    # band only when marginal_fraction is wide enough.
+    return ProcessFamily(
+        rules=[
+            {"id": "R", "parameter": "gap", "operator": "gte", "limit": 1.0,
+             "severity": "major", "source": "Note"},
+        ]
+    )
+
+
+def test_missing_scoring_falls_back_to_defaults():
+    # No scoring passed -> historical defaults. margin 0.05 on limit 1.0 is within
+    # the default 10% band -> flag.
+    summary = evaluate_family("stamping", _marginal_family(), {"gap": 1.05}, "v")
+    assert summary.results[0].verdict == "flag"
+    assert "marginal" in summary.results[0].note.lower()
+
+
+def test_custom_scoring_block_is_honored():
+    fam = _marginal_family()
+    # Tighten the marginal band to ~1% -> the same 0.05 margin is no longer
+    # marginal, so the verdict is a clean pass. Config changed behavior, no code.
+    tight = Scoring(marginal_fraction=0.01)
+    summary = evaluate_family("stamping", fam, {"gap": 1.05}, "v", scoring=tight)
+    assert summary.results[0].verdict == "pass"
+
+    # Widen it far enough that 0.05 is inside the band -> flag.
+    wide = Scoring(marginal_fraction=0.10)
+    summary = evaluate_family("stamping", fam, {"gap": 1.05}, "v", scoring=wide)
+    assert summary.results[0].verdict == "flag"
+
+
+def test_custom_verdict_credit_changes_score():
+    fam = _marginal_family()
+    # A flag normally earns half credit (score 50). Give a flag full credit and
+    # the score climbs to 100 — purely config-driven.
+    summary = evaluate_family("stamping", fam, {"gap": 1.05}, "v")
+    assert summary.results[0].verdict == "flag"
+    base = summary.readiness_score
+
+    generous = Scoring(verdict_credit={"pass": 1.0, "flag": 1.0, "fail": 0.0})
+    summary2 = evaluate_family("stamping", fam, {"gap": 1.05}, "v", scoring=generous)
+    assert summary2.readiness_score > base
