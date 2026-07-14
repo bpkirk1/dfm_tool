@@ -229,6 +229,42 @@ process_families:
           - "DFM for Next Gen RAM P0.2 concept-20260330 Sht6: 'Blanking radii should be at least of R0.05mm'"
           - "PGCD DFM For 757-4111-03X (2026-05-23) Sht12/Sht14: 'product R0.025 cannot be met, optimize'; sharp corners recommended to R0.08 — confirms practical stamped inside-radius floor ~R0.05-0.08"
 
+      # --- Phase 7: flat-pattern / developed-blank material checks ----------
+      # Run on the *developed* (unfolded) blank. If the part cannot be unfolded
+      # unambiguously (flat_pattern.status != "ok"), these return `manual` with
+      # the unfold reasons — they are never silently passed.
+      - id: STMP-FLAT-MIN-WEB
+        parameter: flat_min_web_mm
+        operator: gte
+        limit: 0.12                    # PLACEHOLDER — supplier capability, confirm at FAI
+        severity: major
+        source: "flat-pattern development (min material web between adjacent cutouts in the developed blank)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-FLAT-FEATURE-TO-EDGE
+        parameter: flat_min_feature_to_edge_mm
+        operator: gte
+        limit: 0.12                    # PLACEHOLDER — supplier capability, confirm at FAI
+        severity: major
+        source: "flat-pattern development (min cutout-to-blank-edge material in the developed blank)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-FLAT-CARRIER-CONNECTION
+        parameter: flat_min_carrier_connection_mm
+        operator: gte
+        limit: 0.40                    # PLACEHOLDER — supplier capability, confirm at FAI
+        severity: major
+        source: "flat-pattern development (blank-to-carrier tie width; manual unless carrier/strip context exists)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-FLAT-OVERLAP
+        parameter: flat_patch_overlap_mm
+        operator: lte
+        limit: 0.0                     # unfolded patches must not overlap — undevelopable if they do
+        severity: blocker
+        source: "flat-pattern development (patch overlap => the design cannot be developed to a flat blank)"
+        supplier_adjustable: false
+
       # ======================================================================
       # mine.1 PROPOSED stamping rules (run 2026-06-19) — NOT active until signed off
       # ======================================================================
@@ -286,6 +322,18 @@ process_families:
       accumulated_15_prog_tol_mm: 0.05 # Note 18, SPC sample of 15 progressions
       coining_for_pitch_camber_allowed: true   # Note 19
       reeling_direction_defined: true  # Sht6
+
+    # Phase 7: flat-pattern development. K-factor (neutral-axis position) and the
+    # flat-state material minimums live here — never hardcoded in the unfolder.
+    flat_pattern:
+      k_factor_default: 0.40           # neutral-axis factor for thin copper alloy
+      k_factor_by_r_over_t:            # optional refinement table: first row whose
+        - {r_over_t_max: 1.0, k: 0.35} # r_over_t_max >= (inside_radius / thickness)
+        - {r_over_t_max: 3.0, k: 0.40} # supplies K; else k_factor_default is used.
+        - {r_over_t_max: 999, k: 0.45}
+      min_flat_web_mm: 0.12            # PLACEHOLDER — supplier capability, confirm at FAI
+      min_flat_feature_to_edge_mm: 0.12
+      min_carrier_connection_mm: 0.40
 
     plating:
       selective: true

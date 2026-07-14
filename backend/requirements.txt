@@ -9,3 +9,6 @@ pdfplumber>=0.11
 pytest>=8.3
 httpx>=0.27
 reportlab>=4.2
+# Optional: DXF export of the developed flat pattern for supplier packets.
+# Lazy-imported — the app degrades gracefully if it is not installed.
+ezdxf>=1.1

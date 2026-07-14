@@ -110,6 +110,7 @@ def generate_strip_layout(
     family: ProcessFamily,
     geometry: GeometryFeatures | None = None,
     ruleset_version: str = "unknown",
+    flat_developed_bbox_mm: tuple[float, float] | list[float] | None = None,
 ) -> StripLayout:
     strip = getattr(family, "strip", None) or {}
     forming = getattr(family, "forming", None) or {}
@@ -220,8 +221,10 @@ def generate_strip_layout(
     if pitch:
         layout.strip_length_mm = round(len(stations) * pitch, 3)
 
-    _estimate_utilization(layout, geometry, policy, multi_up)
-    _add_review_items(layout, geometry, pitch, multi_up)
+    used_flat_bbox = _estimate_utilization(
+        layout, geometry, policy, multi_up, flat_developed_bbox_mm
+    )
+    _add_review_items(layout, geometry, pitch, multi_up, used_flat_bbox)
     return layout
 
 
@@ -230,33 +233,45 @@ def _estimate_utilization(
     geometry: GeometryFeatures | None,
     policy: dict[str, Any],
     multi_up: int | None,
-) -> None:
+    flat_developed_bbox_mm: tuple[float, float] | list[float] | None = None,
+) -> bool:
     """Across-feed strip-width utilization = parts width / total strip width.
 
-    This is the defensible component we can compute from the bounding box. Full
-    material utilization (including the feed-direction scrap web) needs the
-    flat-pattern blank area and is left as a review item.
+    Prefers the true developed (flat-pattern) blank extent when it is available;
+    otherwise falls back to the formed-part bounding box. Returns True when the
+    developed flat bbox was used.
     """
-    if not geometry or not geometry.dimensions_mm or not multi_up:
-        return
-    dims = sorted(geometry.dimensions_mm, reverse=True)
-    # dims[0] = feed length (largest), dims[1] = across-feed width (next largest).
-    part_across = dims[1] if len(dims) > 1 else dims[0]
     carrier = float(policy.get("carrier_allowance_mm", 2.0))
     carrier_sides = 2 if policy.get("carrier_style") in (None, "double_side") else 1
+
+    used_flat = False
+    if flat_developed_bbox_mm and len(flat_developed_bbox_mm) >= 2:
+        # Developed blank: the smaller extent is taken as the across-feed width.
+        part_across = min(flat_developed_bbox_mm[0], flat_developed_bbox_mm[1])
+        used_flat = True
+    elif geometry and geometry.dimensions_mm and multi_up:
+        dims = sorted(geometry.dimensions_mm, reverse=True)
+        # dims[0] = feed length (largest), dims[1] = across-feed width (next largest).
+        part_across = dims[1] if len(dims) > 1 else dims[0]
+    else:
+        return False
+    if not multi_up:
+        return False
 
     parts_width = part_across * multi_up
     strip_width = parts_width + carrier_sides * carrier
     layout.strip_width_estimate_mm = round(strip_width, 3)
     if strip_width > 0:
         layout.width_utilization_pct = round(100.0 * parts_width / strip_width, 1)
+    origin = "developed flat-pattern blank" if used_flat else "part bounding box"
     layout.assumptions.append(
-        f"Strip width estimated from the part bounding box: across-feed extent "
+        f"Strip width estimated from the {origin}: across-feed extent "
         f"{part_across:.2f} mm x {multi_up} up + {carrier_sides}x{carrier:g} mm carrier."
     )
     layout.assumptions.append(
         "Width utilization = parts width / total strip width (across feed only)."
     )
+    return used_flat
 
 
 def _add_review_items(
@@ -264,6 +279,7 @@ def _add_review_items(
     geometry: GeometryFeatures | None,
     pitch: float | None,
     multi_up: int | None,
+    used_flat_bbox: bool = False,
 ) -> None:
     if pitch is None:
         layout.review_items.append("No progression pitch in config — strip length not computed.")
@@ -274,10 +290,11 @@ def _add_review_items(
             "No 3D model provided — station sequence is from config only; "
             "confirm feature pierces against the actual part."
         )
-    layout.review_items.append(
-        "Full material utilization needs the flat-pattern blank area and scrap-web "
-        "layout (feed direction) — confirm with the unfolded blank."
-    )
+    if not used_flat_bbox:
+        layout.review_items.append(
+            "Full material utilization needs the flat-pattern blank area and scrap-web "
+            "layout (feed direction) — confirm with the unfolded blank."
+        )
     layout.review_items.append(
         "Station interference is assumed (idle stations inserted by policy), not "
         "geometrically verified — confirm form-tool clearances."

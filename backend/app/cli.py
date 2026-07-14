@@ -26,6 +26,8 @@ def main() -> int:
         action="store_true",
         help="Generate a first-pass progressive die strip layout (stamping)",
     )
+    ap.add_argument("--flat", metavar="OUT.svg", help="Develop the flat pattern and write an SVG")
+    ap.add_argument("--flat-dxf", metavar="OUT.dxf", help="Also write the developed blank as DXF")
     args = ap.parse_args()
 
     store = CriteriaStore(config.DB_PATH)
@@ -34,6 +36,8 @@ def main() -> int:
 
     if args.strip:
         return _strip(store, args)
+    if args.flat or args.flat_dxf:
+        return _flat(store, args)
 
     report = build_report(
         store,
@@ -90,6 +94,54 @@ def _strip(store: CriteriaStore, args) -> int:
         print("\n  Needs engineer confirmation:")
         for r in layout.review_items:
             print(f"   - {r}")
+    print()
+    return 0
+
+
+def _flat(store: CriteriaStore, args) -> int:
+    from pathlib import Path
+
+    from .flatpattern import analyze_flat, render_dxf, render_svg
+
+    if not args.step:
+        print("--flat requires --step <model.stp>")
+        return 2
+    criteria = store.get_criteria()
+    family = args.family or "stamping"
+    fam = criteria.family(family)
+    result = analyze_flat(args.step, getattr(fam, "flat_pattern", None))
+    fp = result.flat_pattern
+
+    print(f"\nFlat pattern — {family}")
+    print(f"  status         : {fp.status}")
+    print(f"  developed bbox : {fp.developed_bbox_mm} mm")
+    print(f"  bends developed: {fp.developed_bend_count}   K-factor={fp.k_factor_default}")
+    if result.features.get("flat_min_web_mm") is not None:
+        print(f"  min web        : {result.features['flat_min_web_mm']} mm")
+    if result.features.get("flat_min_feature_to_edge_mm") is not None:
+        print(f"  feat.-to-edge  : {result.features['flat_min_feature_to_edge_mm']} mm")
+    for r in fp.reasons:
+        print(f"   - {r}")
+
+    limits = {
+        "flat_min_web_mm": next(
+            (float(x.limit) for x in fam.rules if x.parameter == "flat_min_web_mm"), None
+        ),
+        "flat_min_feature_to_edge_mm": next(
+            (float(x.limit) for x in fam.rules if x.parameter == "flat_min_feature_to_edge_mm"),
+            None,
+        ),
+    }
+    if args.flat:
+        Path(args.flat).write_text(render_svg(fp, result.details, limits), encoding="utf-8")
+        print(f"  wrote SVG      : {args.flat}")
+    if args.flat_dxf:
+        dxf = render_dxf(fp)
+        if dxf is None:
+            print("  DXF skipped    : install the optional 'ezdxf' package for DXF export.")
+        else:
+            Path(args.flat_dxf).write_bytes(dxf)
+            print(f"  wrote DXF      : {args.flat_dxf}")
     print()
     return 0
 

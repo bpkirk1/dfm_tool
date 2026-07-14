@@ -13,6 +13,7 @@ from typing import Any
 
 from ..engine import evaluate_family
 from ..extractors import detect_family, extract_pdf, extract_step
+from ..flatpattern import analyze_flat
 from ..store import CriteriaStore
 
 
@@ -26,6 +27,18 @@ class RunInputs:
 
 # Rule whose failing regions we can localize from the model-derived thickness map.
 _THICKNESS_RULE_ID = "STMP-STOCK-THICKNESS-UNIFORM"
+# Flat-pattern check parameters (populated only for the stamping family) and the
+# detail key that carries each one's flat-space + model-space witness location.
+_FLAT_PARAMS = (
+    "flat_min_web_mm",
+    "flat_min_feature_to_edge_mm",
+    "flat_min_carrier_connection_mm",
+    "flat_patch_overlap_mm",
+)
+_FLAT_MARKER_MAP = {
+    "STMP-FLAT-MIN-WEB": ("min_web", "flat_min_web_mm"),
+    "STMP-FLAT-FEATURE-TO-EDGE": ("feature_to_edge", "flat_min_feature_to_edge_mm"),
+}
 # Rules driven by the model-derived minimum inside corner/bend radius; we can pin
 # the exact corner that drives them.
 _RADIUS_PARAM = "min_inside_corner_radius_mm"
@@ -103,6 +116,31 @@ def _build_markers(thickness: dict[str, Any] | None, summary: Any) -> list[dict[
     return markers
 
 
+def _flat_markers(details: dict[str, Any], summary: Any) -> list[dict[str, Any]]:
+    """Pin failing/at-risk flat-state checks in the 3D viewer, where we can map
+    the developed-blank location back to model space."""
+    markers: list[dict[str, Any]] = []
+    for r in summary.results:
+        info = _FLAT_MARKER_MAP.get(r.rule_id)
+        if not info or r.verdict not in ("fail", "flag"):
+            continue
+        zone = details.get(info[0])
+        if not zone or not zone.get("model"):
+            continue
+        markers.append(
+            {
+                "rule_id": r.rule_id,
+                "parameter": info[1],
+                "verdict": r.verdict,
+                "location": zone["model"],
+                "value_mm": zone.get("value_mm"),
+                "label": f"Flat-state {info[0].replace('_', ' ')}: {zone.get('value_mm')} mm "
+                f"(limit {r.limit_detail})",
+            }
+        )
+    return markers
+
+
 def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
     criteria = store.get_criteria()
 
@@ -123,9 +161,33 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
     if geometry:
         features.update(geometry.features)
 
+    # Phase 7: develop the flat blank and measure the flat-state material checks.
+    # Only for the stamping family and only from a STEP model. Failures/manuals
+    # flow through the normal engine because the rules live in the YAML.
+    flat_result = None
+    if inputs.step_path and family_name == "stamping":
+        try:
+            flat_cfg = getattr(family, "flat_pattern", None)
+            flat_result = analyze_flat(str(inputs.step_path), flat_cfg)
+            features.update(flat_result.features)
+        except Exception as exc:  # a parse quirk must never break the report
+            flat_result = None
+            features.setdefault("_flat_error", str(exc))
+
     summary = evaluate_family(
         family_name, family, features, ruleset_version=criteria.meta.ruleset_version
     )
+
+    # Surface the unfold reasons in the manual detail of the flat rules, so the
+    # "Requires manual check" section explains *why* they weren't developed.
+    if flat_result is not None and flat_result.flat_pattern.status != "ok":
+        reasons = flat_result.flat_pattern.reasons or [
+            "Flat pattern could not be fully developed from the model."
+        ]
+        detail = " ".join(reasons)
+        for r in summary.results:
+            if r.parameter in _FLAT_PARAMS and r.verdict == "manual":
+                r.note = (r.note + " " if r.note else "") + detail
 
     # Expected material thickness: prefer the drawing/spec when a 2D drawing was
     # supplied; otherwise derive it from the 3D model (the gauge from bends/walls).
@@ -142,6 +204,10 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
     else:
         material_thickness_used = spec_thickness
         material_thickness_source = "material spec" if spec_thickness else None
+
+    markers = _build_markers(thickness, summary)
+    if flat_result is not None:
+        markers.extend(_flat_markers(flat_result.details, summary))
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -161,7 +227,9 @@ def build_report(store: CriteriaStore, inputs: RunInputs) -> dict[str, Any]:
         "material_thickness_source": material_thickness_source,
         # Per-feature markers (model-space) so the viewer pins the exact failed
         # areas rather than tinting the whole part.
-        "markers": _build_markers(thickness, summary),
+        "markers": markers,
+        # Phase 7: developed-blank summary (status, bends, developed bbox, reasons).
+        "flat_pattern": flat_result.flat_pattern.to_dict() if flat_result else None,
         # Basename of the STEP model so the report can load it in the 3D viewer.
         "model_file": Path(inputs.step_path).name if inputs.step_path else None,
     }

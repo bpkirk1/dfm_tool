@@ -111,6 +111,43 @@ Tunable policy lives in `dfm-criteria.seed.yaml` under `stamping.strip.die_layou
 Gaps that need a real B-rep extractor (true interference checks, flat-pattern
 blank-area nesting) are surfaced as explicit review items, not guessed.
 
+## Phase 7 — flat-pattern (developed blank) + "enough material" checks
+
+`app/flatpattern/` develops a formed stamped part into its flat blank and runs
+flat-state material checks, so the regularly-missed "not enough material in the
+developed state" problem is caught before a design ever reaches a supplier.
+
+**Honest by construction.** The unfolder is kernel-free: it recovers planar
+patches + coaxial cylindrical bends from the STEP text (building on
+`extractors/thickness.py`), then rotates each patch about its bend line into a
+common plane, replacing every bend arc with its bend allowance
+`BA = angle × (R_inside + K·t)`. `K` comes from config, never code. It only
+reports `status: ok` when the topology is unambiguous (planar patches, simple
+acyclic bends, each bend joining exactly two patches, no drawn/compound
+surfaces). Anything else is `partial`/`unavailable` **with reasons**, and the
+dependent checks return `manual` — never a silently-wrong flat pattern.
+
+Flat checks are ordinary YAML rules (stamping family), so they flow through the
+same engine, provenance and readiness score:
+
+- `STMP-FLAT-MIN-WEB` — narrowest web between adjacent cutouts in the flat state
+- `STMP-FLAT-FEATURE-TO-EDGE` — min cutout-to-blank-edge material
+- `STMP-FLAT-CARRIER-CONNECTION` — blank-to-carrier tie width (manual w/o carrier ctx)
+- `STMP-FLAT-OVERLAP` — unfolded patches must not overlap (blocker)
+
+K-factor table and the flat minimums live under `stamping.flat_pattern`.
+
+```bash
+# CLI: develop + write supplier artifacts (DXF needs the optional ezdxf package)
+python -m app.cli --step ../examples/<part>.stp --flat out.svg --flat-dxf out.dxf
+```
+
+Web: open a stamping report and click **View flat pattern**, or visit
+`/flat?family=stamping&model=<file>`. JSON at `/api/flat`; supplier exports at
+`/flat.svg`, `/flat.png`, `/flat.dxf`. When a flat pattern is `ok`, the strip
+layout uses its real developed blank width for utilization instead of the
+formed-part bounding box.
+
 ## Phase 2 (next)
 
 - Criteria editor UI over the versioned store; CTF/SPC capability import that

@@ -17,12 +17,20 @@
 
 meta:
   schema_version: "1.0"
-  ruleset_version: "2026.06.19-r1"
+  ruleset_version: "2026.07.13-r2"
   units: mm                      # angles in degrees, Ra in micro-inch where noted
   last_edited_by: cowork-dfm-agent
   # r1 (2026-06-19): Brian approved 14 of the mine.1 items (incl. tightening
   # MOLD-MIN-WALL-FILL 0.15->0.20 and loosening MOLD-MIN-CORNER-RADIUS 0.15->0.10)
   # and the whole cnc_machining family; 5 single-source items remain proposed.
+  # r2 / mine.2 (2026-07-13): second mining pass over the "Diff Pair components"
+  # supplier corpus (Hoky 3 decks, AJET 11 decks + 1 eml, Polygon 25 decks +
+  # trackers; 132 findings — see new_suggestions/mining/). Brian approved the
+  # full REVIEW_QUEUE: 15 new stamping + 9 new molding rules added (all
+  # status: proposed, incl. the first flat-pattern/developed-blank set),
+  # 10 evidence/capability updates to existing rules (incl. STMP-MIN-INSIDE-RADIUS
+  # capability CONFIRMED at 0.08 per Polygon SD-accepted R0.025->R0.08), and a
+  # proposed strip policy block. CTF import file: new_suggestions/mining/ctf-entries.json.
   # ---------------------------------------------------------------------------
   # status legend (added mine.1):
   #   active   = approved limit, enforced (all original seed rules are active)
@@ -222,12 +230,62 @@ process_families:
         severity: major
         source: "P-233-1111-500 Sht4 (R0.05) TYP — drawing min inside/form radius"
         supplier_adjustable: true
-        capability: {achieved_min: null, cpk: null, confirmed: false}
+        capability: {achieved_min: 0.08, cpk: null, confirmed: true}   # mine.2: Polygon R0.025->R0.08 SD-accepted 2026-05-29 (PGCD-004)
         # mine.1: field DFMs corroborate the ~R0.05 stamping floor (R0.025 not achievable)
-        seen_count: 2
+        # mine.2 CONFLICT NOTE (Brian-approved): where function demands, a sharp
+        # corner + overcut may override this rule with documented risk acceptance
+        # (AJET-035 SD response: "it should be a sharp angle with an overcut").
+        seen_count: 7
         evidence:
           - "DFM for Next Gen RAM P0.2 concept-20260330 Sht6: 'Blanking radii should be at least of R0.05mm'"
           - "PGCD DFM For 757-4111-03X (2026-05-23) Sht12/Sht14: 'product R0.025 cannot be met, optimize'; sharp corners recommended to R0.08 — confirms practical stamped inside-radius floor ~R0.05-0.08"
+          - "mine.2 PGCD-004: 757-X111 sdcomments20260529 Sht12/14 — R0.025 not achievable at t=0.08, R0.08 accepted (OK --SD20260529): capability CONFIRMED"
+          - "mine.2 AJET-014/AJET-035: blanking radii >=R0.05 (0330 Sht6); R0.03->R0.08 requested on SentryHD (0511 Sht11)"
+          - "mine.2 HOKY-018/HOKY-021: 757-84X1 A0 Sht14 (R0.05->R0.08 for punch strength) / Sht17 (square-hole R too small, increase to R0.10)"
+
+      # --- Phase 7: flat-pattern / developed-blank material checks ----------
+      # Run on the *developed* (unfolded) blank. If the part cannot be unfolded
+      # unambiguously (flat_pattern.status != "ok"), these return `manual` with
+      # the unfold reasons — they are never silently passed.
+      - id: STMP-FLAT-MIN-WEB
+        parameter: flat_min_web_mm
+        operator: gte
+        limit: 0.12                    # PLACEHOLDER — supplier capability, confirm at FAI
+        # mine.2: only field datum is 0.03 flagged "too small" (SD agreed to increase);
+        # REVIEW_QUEUE approved a 0.05 floor alternative — true supplier floor is
+        # between 0.03 and 0.12. Keeping the conservative 0.12 until confirmed.
+        severity: major
+        source: "flat-pattern development (min material web between adjacent cutouts in the developed blank)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 3
+        evidence:
+          - "mine.2 PGCD-008: 757-3111 sdcomments20260707 Sht15 — 'gap when unfolding the product is too small at 0.03, recommended to increase' (OK, can increase. SD20260706)"
+          - "mine.2 PGCD-006: 757-X111 sdcomments20260529 Sht13 — low-material region pulls/deforms irregularly during forming (risk accepted)"
+          - "mine.2 HOKY-004: 757-4311 A0 Sht5 — material removal on bridge needed at stretch area to avoid deformation"
+      - id: STMP-FLAT-FEATURE-TO-EDGE
+        parameter: flat_min_feature_to_edge_mm
+        operator: gte
+        limit: 0.12                    # PLACEHOLDER — supplier capability, confirm at FAI
+        severity: major
+        source: "flat-pattern development (min cutout-to-blank-edge material in the developed blank)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-FLAT-CARRIER-CONNECTION
+        parameter: flat_min_carrier_connection_mm
+        operator: gte
+        limit: 0.40                    # PLACEHOLDER — supplier capability, confirm at FAI
+        severity: major
+        source: "flat-pattern development (blank-to-carrier tie width; manual unless carrier/strip context exists)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+      - id: STMP-FLAT-OVERLAP
+        parameter: flat_patch_overlap_mm
+        operator: lte
+        limit: 0.0                     # unfolded patches must not overlap — undevelopable if they do
+        severity: blocker
+        source: "flat-pattern development (patch overlap => the design cannot be developed to a flat blank)"
+        supplier_adjustable: false
 
       # ======================================================================
       # mine.1 PROPOSED stamping rules (run 2026-06-19) — NOT active until signed off
@@ -264,10 +322,165 @@ process_families:
         limit: 45                      # too-small cut angle on 2nd punch -> burrs
         units: deg
         severity: minor
-        status: proposed
+        status: proposed               # mine.2: stays ADVISORY (minor, never blocker) — SD rejected the change on 757-X111 and accepted burr risk
         source: "PGCD DFM For 757-4111-03X 2026-05-23 Sht21: 'angle at the cutting point of the second punch is too small, prone to burrs, change to 45 deg'"
         supplier_adjustable: false
+        seen_count: 2
+        evidence:
+          - "mine.2 PGCD-012: 757-X111 sdcomments20260529 Sht24 — same 45deg request; 'No, we cannot change angle. We will accept some risk of burrs. --SD20260529'"
+
+      # ======================================================================
+      # mine.2 PROPOSED stamping rules (run 2026-07-13) — Diff Pair components
+      # corpus (Hoky/AJET/Polygon). Brian approved inclusion as PROPOSED via
+      # REVIEW_QUEUE.md 2026-07-13. Limits marked DERIVED were computed from
+      # observed data, not stated verbatim — confirm before activating.
+      # Evidence ids reference new_suggestions/mining/findings-*.jsonl.
+      # ======================================================================
+      - id: STMP-FLAT-BEND-LENGTH
+        parameter: bend_flat_length_min_mm
+        operator: gte
+        limit: 0.30                    # flat available for a bend; below this metal fiber extrudes
+        severity: major
+        status: proposed
+        source: "AJET NextGen P0.2 concept 260312 Sht5: 'flat is too small to bend, easy to extrude metal fiber, extend to 0.3mm'"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
         seen_count: 1
+        evidence: ["mine.2 AJET-004"]
+      - id: STMP-FLAT-BEND-EDGE-LAND
+        parameter: bend_to_blank_edge_land_mm
+        operator: gte
+        limit: 0.05                    # bend radius must not run off the blank edge; 0.03 absolute floor also cited
+        severity: major
+        status: proposed
+        source: "AJET NextGen P0.2 concept 260312 Sht6 (leave 0.05mm land); concept-20260330 Sht8 (keep >=0.03mm from edge for bending)"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 2
+        evidence: ["mine.2 AJET-005", "mine.2 AJET-016"]
+      - id: STMP-STRIP-WIDTH-RIGIDITY
+        parameter: strip_width_to_thickness_ratio
+        operator: lte
+        limit: 650                     # DERIVED: 53mm/0.08 (~660) flagged; accepted 29-48mm/0.08 (~360-600); 72mm/0.05 (1440) "extremely difficult"
+        severity: major
+        status: proposed
+        source: "PGCD 757-X111 decks Sht9 (split stamping accepted --SD20260707); Hoky 757-4311 A0 Sht2"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 3
+        evidence: ["mine.2 PGCD-001", "mine.2 PGCD-003", "mine.2 HOKY-001"]
+      - id: STMP-TIEBAR-VESTIGE-TOL
+        parameter: tie_bar_vestige_control
+        operator: eq
+        limit: "confirm: sheared tie-bar vestige position tolerance is +/-0.03mm and vestige is less precise than blanked features; v-notch must NOT be line-to-line with a blanking edge (SI impact)"
+        severity: major
+        status: proposed
+        source: "AJET v-notch email thread 2026-04-18 (William Wang): vestige tolerance +/-0.03mm, cannot meet SI requirement"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 AJET-057"]
+      - id: STMP-NO-VESTIGE-SIGNAL-TRACE
+        parameter: tie_bar_vestige_placement
+        operator: eq
+        limit: "confirm: no tie-bar vestige along the length of any signal trace (sliver + SI risk governs bridge placement)"
+        severity: major
+        status: proposed
+        source: "SD response, PGCD 757-3111 sdcomments20260707 Sht28-30: 'not acceptable, no tie-bar vestige along the signal trace'"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 PGCD-013"]
+      - id: STMP-BRIDGE-CUT-BLADE
+        parameter: bridge_cut_blade_min_thickness_mm
+        operator: gte
+        limit: 0.20                    # DERIVED floor: 0.17mm x 4-6mm blade flagged fragile for post-IM cutting
+        severity: minor
+        status: proposed
+        source: "PGCD 757-3111 sdcomments20260707 Sht28: blade 0.17mm x 4-6mm prone to damage cutting bridges after IM"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 1
+        evidence: ["mine.2 PGCD-013"]
+      - id: STMP-SEAM-GAP-IM-FLASH
+        parameter: formed_seam_gap_mm
+        operator: lte
+        limit: 0.02                    # >0.02mm seam gap = plastic flash path during insert molding; curl seam requirement <0.03
+        severity: major
+        status: proposed
+        source: "PGCD 757-8141 Rev.02 Sht13: 'terminal gap >0.02mm elevates flash risk' — SD: understood, stamping review if flash appears; curl gap <0.03 --SD20260529"
+        supplier_adjustable: false
+        seen_count: 3
+        evidence: ["mine.2 PGCD-025", "mine.2 PGCD-007", "mine.2 PGCD-009"]
+      - id: STMP-COIN-TOLERANCE-GUIDANCE
+        parameter: coined_area_expectations
+        operator: eq
+        limit: "confirm: coined/extruded areas produce jagged, indistinct features and 0.02-0.03mm steps on adjacent bend planes; do not dimension tighter than this near coins; keep coin transition zones off bend radii; avoid large-area thinning"
+        severity: minor
+        status: proposed
+        source: "Hoky 757-4311 A0 Sht4 (accepted --SD20260603) + 757-84X1 A0 Sht12; AJET P0.2 20260406 Sht2"
+        supplier_adjustable: false
+        seen_count: 4
+        evidence: ["mine.2 HOKY-003", "mine.2 HOKY-016", "mine.2 AJET-018", "mine.2 PGCD-006"]
+      - id: STMP-PLATE-MEASUREMENT-POINTS
+        parameter: plating_thickness_measurement_points
+        operator: eq
+        limit: "confirm: plating thickness is controlled ONLY at defined 2D measurement points on primary coplanar faces; side/non-coplanar faces uncontrolled (visual coverage only) — controlling sides forces front thickness 2-3x over"
+        severity: major
+        status: proposed
+        source: "Hoky 757-4311 A1 Sht10 (30u-in bend -> 45u-in flat) + 757-84X1 A0 Sht15; Polygon Signal-Vpair 833 plating DFM Sht3-4"
+        supplier_adjustable: false
+        seen_count: 4
+        evidence: ["mine.2 HOKY-009", "mine.2 HOKY-019", "mine.2 PGCD-062", "mine.2 PGCD-063"]
+      - id: STMP-PLATE-ZONE-DIMENSIONED
+        parameter: selective_plating_zone_definition
+        operator: eq
+        limit: "confirm: all selective plating zones (Au/PdNi/Sn) explicitly dimensioned on 2D before DFM release — required for plating fixture design"
+        severity: minor
+        status: proposed
+        source: "Polygon Signal-Vpair 833 plating DFM Sht3; Hoky 757-4311 A0 Sht3 (tin areas unspecified)"
+        supplier_adjustable: false
+        seen_count: 2
+        evidence: ["mine.2 PGCD-062", "mine.2 HOKY-002"]
+      - id: STMP-PLATE-JIG-CARRIER-RISK
+        parameter: selective_plating_jig_count
+        operator: lte
+        limit: 2                       # >2 jigs at ultra-thin gauge elevates carrier pilot-hole deformation risk
+        severity: minor
+        status: proposed
+        source: "Hoky 757-4311 A1 Sht9: 3 jigs -> more locating-pin contacts -> carrier hole deformation risk at t=0.05"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 3
+        evidence: ["mine.2 HOKY-008", "mine.2 HOKY-001", "mine.2 HOKY-020"]
+      - id: STMP-PILOT-HOLE-CENTERED
+        parameter: pilot_hole_placement
+        operator: eq
+        limit: "confirm: keep pilot holes centered in the carrier — off-center pilots reduce carrier strength"
+        severity: minor
+        status: proposed
+        source: "AJET SentryHD RAM 20260601 Sht2"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 AJET-051"]
+      - id: STMP-CARRIER-ID-NOTCH
+        parameter: carrier_id_notch_policy
+        operator: eq
+        limit: "confirm: strip/wafer ID notches must not weaken the carrier; remove from customer 3D model — supplier finalizes notch definition after tooling design"
+        severity: info
+        status: proposed
+        source: "AJET SentryHD RAM 20260601 Sht5 + 20260518 Sht7"
+        supplier_adjustable: false
+        seen_count: 2
+        evidence: ["mine.2 AJET-054", "mine.2 AJET-048"]
+      - id: STMP-IM-CARRIER-POSITIONING-HOLES
+        parameter: im_carrier_positioning_holes
+        operator: eq
+        limit: "confirm: insert-molding requires dedicated carrier positioning holes beyond stamping pilots (precedent: dia 1.5 and dia 0.8) — accepted"
+        severity: minor
+        status: proposed
+        source: "PGCD 757-8141 Rev.02 Sht24 'Added P24' — OK --SD20260707"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 PGCD-032"]
 
     forming:
       multi_axis: true
@@ -286,6 +499,26 @@ process_families:
       accumulated_15_prog_tol_mm: 0.05 # Note 18, SPC sample of 15 progressions
       coining_for_pitch_camber_allowed: true   # Note 19
       reeling_direction_defined: true  # Sht6
+      # mine.2 PROPOSED strip policy (Brian-approved as proposed 2026-07-13):
+      proposed_policy:
+        status: proposed
+        reserved_trim_width_mm: 1.0            # AJET-021: reserve material for final cutting
+        mating_strip_widths_equal: true        # AJET-037 SD requirement: signal & shield strips same width for automation
+        standoff_orientation: "uniform across the strip; pointing away from feed direction through the plating line (AJET-019/055). Standoffs should include a flat where practical (AJET-020); programs MAY instead accept tape-puncture risk (PGCD-011 SD precedent) — per-program call."
+        reeling_direction: "decide once, early — OM reeling requirement propagates upstream to IM and stamping (PGCD-035, AJET-042/055)"
+        evidence: ["mine.2 AJET-021", "mine.2 AJET-019", "mine.2 AJET-020", "mine.2 AJET-055", "mine.2 AJET-037", "mine.2 PGCD-035", "mine.2 PGCD-011"]
+
+    # Phase 7: flat-pattern development. K-factor (neutral-axis position) and the
+    # flat-state material minimums live here — never hardcoded in the unfolder.
+    flat_pattern:
+      k_factor_default: 0.40           # neutral-axis factor for thin copper alloy
+      k_factor_by_r_over_t:            # optional refinement table: first row whose
+        - {r_over_t_max: 1.0, k: 0.35} # r_over_t_max >= (inside_radius / thickness)
+        - {r_over_t_max: 3.0, k: 0.40} # supplies K; else k_factor_default is used.
+        - {r_over_t_max: 999, k: 0.45}
+      min_flat_web_mm: 0.12            # PLACEHOLDER — supplier capability, confirm at FAI
+      min_flat_feature_to_edge_mm: 0.12
+      min_carrier_connection_mm: 0.40
 
     plating:
       selective: true
@@ -385,7 +618,9 @@ process_families:
         source: "AJET DFM templet 2025-09-18 + field-DFM consensus (>=0.20 mm; lossy/long-flow regions push 0.25-0.30)"
         supplier_adjustable: true
         capability: {achieved_min: 0.18, cpk: null, confirmed: false}   # supplier-reachable point (round) per C15-HSG
-        seen_count: 7
+        # mine.2: 757 program formally ACCEPTED short-shot risk instead of thickening
+        # (documented risk-acceptance precedent) — see governance note in REVIEW_QUEUE.
+        seen_count: 10
         evidence:
           - "DFM2550324 CBF&CBM Housing 2025-07-10 Sht10: 0.13mm wall short-shot risk -> 'increase wall thickness to more than 0.2mm'"
           - "DFM For C15-HSG-CONCEPT1 Sht12/15: 0.12mm & 0.05mm pin-hole walls short-shot -> 'increase to more than 0.2mm' (supplier: 'can only increase round to 0.18mm')"
@@ -393,6 +628,8 @@ process_families:
           - "NextGen RAM 2x2 top&bottom shell 2025-11-18 Sht10: 'thicken wall from 0.15 to 0.25mm'; -X2 'from 0.215 to 0.5mm'"
           - "PHD LP DFM compilation 2026-06-11 Sht21/33: thin areas high short-shot risk -> 'increase them to 0.3mm'"
           - "OS-Lossy Housing DFM 2025-04-24 Sht9: multiple 0.17mm thin walls -> difficult filling / short-shot"
+          - "mine.2 PGCD-021/PGCD-054: 757-X141 Rev.01->Rev.02 + SentryHD housings — thin-wall short-shot warnings; customer accepted risk instead of thickening (OK --SD20260529/20260706)"
+          - "mine.2 AJET-008: P0.2 concept-20260319 Sht4 — 0.065mm single-gate flow channel = high short-shot risk in production"
       - id: MOLD-SHUTOFF-WIDTH
         parameter: shutoff_width_mm
         operator: gte
@@ -400,6 +637,9 @@ process_families:
         severity: major
         source: "AJET DFM templet 2025-09-18 (Width of shut-off): >=0.15 mm"
         supplier_adjustable: false
+        seen_count: 1
+        evidence:
+          - "mine.2 AJET-038: SentryHD 0513 Sht2 — 0.042mm sealing land makes the steel insert too weak (failure datum well below limit)"
       - id: MOLD-SHUTOFF-LENGTH
         parameter: shutoff_length_mm
         operator: gte
@@ -492,7 +732,9 @@ process_families:
         source: "Housing DFM consensus: R0.1 practical molded/tooling floor (R0.06 unmachinable; R0.3 preferred). EDM can reach R0.08."
         supplier_adjustable: true
         capability: {achieved_min: 0.08, cpk: null, confirmed: false}   # R0.08 reachable by EDM
-        seen_count: 6
+        # mine.2 corollary (AJET-030, accepted): remove NON-FUNCTIONAL radii/chamfers
+        # at split-insert regions — they weaken the split insert.
+        seen_count: 8
         evidence:
           - "PHD LP DFM compilation 2026-06-11 Sht21: 'increase radii to R0.3 ... updated to R0.15, cannot go larger' (agrees with floor 0.15 / R0.3 preferred)"
           - "RAM 4x4&16x16 Org DFM (2025-11-20 .. 12-01) Sht2/3/6/7: 'R0.06 too small, tooling unable to fabricate, increase to R0.1'"
@@ -500,6 +742,8 @@ process_families:
           - "16X16-HSG-CONCEPT2 2025-12-08 Sht13 & C15-HSG-CONCEPT1 Sht10: 'add R0.1 around groove (typ)'"
           - "DFM2650336 SENTRY HD Housing 2026-06-01 Sht8: 'add Radius 0.10 to improve, R0.10 (TYP)'"
           - "NextGen RAM 2x2 organizer-X1 2025-11-18 Sht13: 'sharp edges Max R0.08 by EDM process; keep max R0.08' (EDM capability)"
+          - "mine.2 PGCD-026: 757-8141 Rev.02 Sht14-17 — R0.03 removed; R0.05->R0.08 accepted (OK --SD20260706): micro-insert machinable floor ~R0.05, preferred R0.08"
+          - "mine.2 PGCD-050: SentryHD Housing Rev.01 Sht8 — add R0.10 TYP at weld-line hole edges (CF-filled resins)"
       - id: MOLD-PARTING-FLASH-MAX
         parameter: parting_line_flash_mm
         operator: lte
@@ -542,7 +786,9 @@ process_families:
         source: "DFM-k1bnj6-gg-thk200 (2025-05) Sht8: 'gate residual will be 0.12mm Max'"
         supplier_adjustable: true
         capability: {achieved_min: null, cpk: null, confirmed: false}
-        seen_count: 5
+        # mine.2 spread: Polygon micro-terminal parts quote 0.15mm max with dia 0.2
+        # point gates, FOT-gated (PGCD-033) — limit stays 0.12 (conservative).
+        seen_count: 7
         evidence:
           - "DFM-k1bnj6 Sht8 & HAORUN p1255-c15-ram-org 2025-12-01 Sht9: 'gate residual 0.12mm Max, please confirm'"
           - "DFM2550324 CBF&CBM Housing 2025-07-10 Sht23: 'Gate Residual Max 0.10mm' (sub gate, cut 0.1mm countertop)"
@@ -558,7 +804,9 @@ process_families:
         status: active                 # r1: Brian-approved 2026-06-19
         source: "DFM for SentryHD RAM-20260511 Sht9: 'add a 2 deg draft by reducing plastic around posts to prevent sticking'"
         supplier_adjustable: true
-        seen_count: 5
+        # mine.2 EXCEPTION (PGCD-036, accepted --SD20260706): zero added draft is
+        # acceptable when part height in the pull direction is very small (micro parts).
+        seen_count: 6
         evidence:
           - "NextGen RAM 16x16 top&bottom shell 2025-12-04 Sht7: 'add draft 3 deg by reducing plastic'"
           - "NextGen RAM 2x2 organizer-X2 2025-12-01 Sht5/6: 'Draft 4 deg by reducing plastic on all similar features'"
@@ -641,10 +889,11 @@ process_families:
         source: "DFM For 16X16-HSG-CONCEPT2-20251208 Sht20: '12x12 pins true position ~0.35mm by experience; recommend relax to 0.5mm for this product; one-sided deformation up to 0.25mm'"
         supplier_adjustable: true
         capability: {achieved_min: 0.35, relaxed_to: 0.5, cpk: null, confirmed: false}
-        seen_count: 2
+        seen_count: 3
         evidence:
           - "16X16-HSG-CONCEPT2 2025-12-08 Sht20: 12x12 pin TP ~0.35mm experience, relax to 0.5mm"
           - "DFM2650336 SENTRY HD Housing 2026-06-01 Sht28: 'positional tolerance of holes about 0.5' (similar-product experience)"
+          - "mine.2 PGCD-057: SentryHD Housing Rev.01 Sht28 — hole TP ~0.5 similar-product experience on CF-filled housings (strengthens relax-to-0.5)"
       - id: MOLD-TEXTURE-FINISH
         parameter: mold_surface_texture
         operator: eq
@@ -654,6 +903,107 @@ process_families:
         source: "DFM-k1bnj6-gg-thk200 (2025-05) Sht13: 'finish follow VID3400/9 MAX'; HAORUN p1255-c15-ram-org 2025-12-01 Sht14: 'product surface VDI/9, hole positions VDI/6'"
         supplier_adjustable: true
         seen_count: 2
+
+      # ======================================================================
+      # mine.2 PROPOSED molding rules (run 2026-07-13) — Diff Pair components
+      # corpus. Brian approved inclusion as PROPOSED via REVIEW_QUEUE.md.
+      # MOLD-NO-ISLAND-VOLUMES and MOLD-NO-UNDERCUT-WALLS are TOOL-CHECKABLE
+      # from geometry once a B-rep path exists (Phase 5).
+      # ======================================================================
+      - id: MOLD-NO-ISLAND-VOLUMES
+        parameter: disconnected_plastic_volumes_per_shot
+        operator: lte
+        limit: 0                       # isolated plastic islands within one shot are unmoldable
+        severity: blocker
+        status: proposed
+        source: "PGCD 757-8141 Rev.02 Sht23: isolated OM features cannot be molded — SD: modeling error, merge into IM"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 PGCD-031"]
+      - id: MOLD-NO-UNDERCUT-WALLS
+        parameter: min_wall_angle_vs_pull_deg
+        operator: gte
+        limit: 90                      # walls leaning negative to pull direction = undercut (88deg flipped to 92deg accepted)
+        units: deg
+        severity: major
+        status: proposed
+        source: "PGCD 757-8141 Rev.02 Sht18: wall angle 88 -> 92 deg to eliminate undercut — OK --SD20260706"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 PGCD-027"]
+      - id: MOLD-EJECTOR-NOT-OPPOSITE-GATE
+        parameter: ejector_gate_coaxiality
+        operator: eq
+        limit: "confirm: ejector pin must not directly face the gate — rapid pin/insert wear, ejector flash, high spare-part cost in multi-cavity high-speed molds"
+        severity: minor
+        status: proposed
+        source: "AJET P0.2 concept-20260319 Sht5; AJET SentryHD RAM 20260511 Sht4"
+        supplier_adjustable: false
+        seen_count: 2
+        evidence: ["mine.2 AJET-009", "mine.2 AJET-028"]
+      - id: MOLD-TERMINAL-HOLDDOWN-DIA
+        parameter: terminal_holddown_pin_dia_mm
+        operator: gte
+        limit: 0.25                    # quantifies MOLD-TERMINAL-FIXING: holddown pins dia >=0.25; witness marks accepted
+        severity: minor
+        status: proposed
+        source: "AJET SentryHD RAM 20260511 Sht8 + 20260513 Sht12: 'add dia 0.25 holddown pins'"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 3
+        evidence: ["mine.2 AJET-032", "mine.2 AJET-010", "mine.2 AJET-011"]
+      - id: MOLD-EDM-FLAT-LAND
+        parameter: min_edm_flat_land_mm
+        operator: gte
+        limit: 0.10                    # DERIVED: 0.08mm land flagged too short for insert EDM/split; 0.14mm acceptable
+        severity: minor
+        status: proposed
+        source: "PGCD DFM2650336 SentryHD Housing Rev.01 Sht11 (chamfer 0.08x0.08 -> 0.08x0.05 to lengthen flat) + Sht9"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 2
+        evidence: ["mine.2 PGCD-053", "mine.2 PGCD-051"]
+      - id: MOLD-WELDLINE-HOLE-RADIUS
+        parameter: weld_line_hole_edge_radius_mm
+        operator: gte
+        limit: 0.10                    # add R0.10 at hole edges where weld lines land (CF-filled resins break there)
+        severity: minor
+        status: proposed
+        source: "PGCD DFM2650336 SentryHD Housing Rev.01 Sht8: weld line at hole edge breaks easily, add R0.10 TYP"
+        supplier_adjustable: false
+        seen_count: 1
+        evidence: ["mine.2 PGCD-050"]
+      - id: MOLD-SLOT-WIDTH-MIN
+        parameter: molded_slot_width_min_mm
+        operator: gte
+        limit: 0.10                    # 0.05 wide x 0.05 deep slot too small; keep >= 0.1 (and >= slot depth)
+        severity: minor
+        status: proposed
+        source: "AJET P0.2 concept 260312 Sht2: 'IM slot width 0.05 too small for depth 0.05; keep MIN 0.1mm'"
+        supplier_adjustable: true
+        capability: {achieved_min: null, cpk: null, confirmed: false}
+        seen_count: 1
+        evidence: ["mine.2 AJET-001"]
+      - id: MOLD-GATE-VESTIGE-SURFACE
+        parameter: gate_vestige_placement
+        operator: eq
+        limit: "confirm: no gate vestige above functional surfaces — use a recessed gate pad (precedent 1.5 x 0.2 DP) or post-mold vestige pressing AFTER the final molding shot (never inside a stamping die: contamination risk)"
+        severity: minor
+        status: proposed
+        source: "SD constraint PGCD 757-8141 Rev.02 Sht28; PGCD Housing Rev.01 Sht15-18; AJET SentryHD 0513 Sht4 (vestige pressing sequencing, compromised)"
+        supplier_adjustable: false
+        seen_count: 4
+        evidence: ["mine.2 PGCD-033", "mine.2 PGCD-055", "mine.2 AJET-029", "mine.2 AJET-024"]
+      - id: MOLD-SIBLING-CONSISTENCY
+        parameter: family_variant_feature_consistency
+        operator: eq
+        limit: "confirm: features at equivalent positions must be consistent across part-family variants (-02V/-03V/-04V) unless intentionally different — supplier cross-check caught modeling errors twice"
+        severity: info
+        status: proposed
+        source: "PGCD 757-8141 Rev.02 Sht19 (missing chamfer = modeling error) + Sht23 (island volume = modeling error)"
+        supplier_adjustable: false
+        seen_count: 2
+        evidence: ["mine.2 PGCD-028", "mine.2 PGCD-031"]
 
     material_capability:           # molding resin reference (LCP Kingfa Vicryst R8332 / 807-0000-135)
       status: active               # r1: Brian-approved 2026-06-19

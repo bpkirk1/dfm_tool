@@ -18,6 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from . import config
 from .diestrip import generate_strip_layout
 from .extractors import extract_step
+from .flatpattern import analyze_flat, render_dxf, render_png, render_svg
 from .report import RunInputs, build_report, render_report_pdf
 from .store import CriteriaStore
 
@@ -78,11 +79,51 @@ def _build_strip_layout(family: str, model: str):
         raise KeyError(family)
     fam = criteria.family(family)
     geometry = None
+    flat_bbox = None
     if model:
         path = _locate_model(model)
         if path is not None:
             geometry = extract_step(path)
-    return generate_strip_layout(family, fam, geometry, criteria.meta.ruleset_version)
+            if family == "stamping":
+                try:
+                    fp = analyze_flat(str(path), getattr(fam, "flat_pattern", None)).flat_pattern
+                    if fp.status == "ok":
+                        flat_bbox = fp.developed_bbox_mm
+                except Exception:
+                    flat_bbox = None
+    return generate_strip_layout(
+        family, fam, geometry, criteria.meta.ruleset_version, flat_developed_bbox_mm=flat_bbox
+    )
+
+
+def _build_flat(family: str, model: str):
+    """Shared helper: develop the flat pattern for a stamping model."""
+    _sync()
+    criteria = _store.get_criteria()
+    if family not in criteria.process_families:
+        raise KeyError(family)
+    fam = criteria.family(family)
+    if not model:
+        raise ValueError("A model is required to develop a flat pattern.")
+    path = _locate_model(model)
+    if path is None:
+        raise FileNotFoundError(model)
+    result = analyze_flat(str(path), getattr(fam, "flat_pattern", None))
+    limits = {
+        "flat_min_web_mm": _limit_for(fam, "flat_min_web_mm"),
+        "flat_min_feature_to_edge_mm": _limit_for(fam, "flat_min_feature_to_edge_mm"),
+    }
+    return result, limits
+
+
+def _limit_for(fam, parameter: str):
+    for rule in fam.rules:
+        if rule.parameter == parameter:
+            try:
+                return float(rule.limit)
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 @app.get("/strip", response_class=HTMLResponse)
@@ -101,6 +142,87 @@ def api_strip(family: str = "stamping", model: str = ""):
     except KeyError:
         return JSONResponse({"error": f"Unknown family '{family}'"}, status_code=400)
     return JSONResponse(layout.to_dict())
+
+
+# --- Phase 7: flat-pattern views + supplier exports ---------------------------
+@app.get("/flat", response_class=HTMLResponse)
+def flat_view(family: str = "stamping", model: str = ""):
+    try:
+        result, limits = _build_flat(family, model)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        return HTMLResponse(f"Cannot develop flat pattern: {exc}", status_code=400)
+    svg = render_svg(result.flat_pattern, result.details, limits)
+    return _render(
+        "flat.html",
+        fp=result.flat_pattern.to_dict(),
+        details=result.details,
+        svg=svg,
+        model=model,
+        family=family,
+    )
+
+
+@app.get("/api/flat")
+def api_flat(family: str = "stamping", model: str = ""):
+    try:
+        result, limits = _build_flat(family, model)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    payload = result.flat_pattern.to_dict()
+    payload["details"] = result.details
+    payload["svg"] = render_svg(result.flat_pattern, result.details, limits)
+    payload["features"] = result.features
+    return JSONResponse(payload)
+
+
+@app.get("/flat.svg")
+def flat_svg(family: str = "stamping", model: str = ""):
+    try:
+        result, limits = _build_flat(family, model)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    svg = render_svg(result.flat_pattern, result.details, limits)
+    stem = Path(model).stem or "flat"
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-flat.svg"'},
+    )
+
+
+@app.get("/flat.png")
+def flat_png(family: str = "stamping", model: str = ""):
+    try:
+        result, limits = _build_flat(family, model)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    png = render_png(result.flat_pattern, result.details, limits)
+    stem = Path(model).stem or "flat"
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-flat.png"'},
+    )
+
+
+@app.get("/flat.dxf")
+def flat_dxf(family: str = "stamping", model: str = ""):
+    try:
+        result, _limits = _build_flat(family, model)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    dxf = render_dxf(result.flat_pattern)
+    if dxf is None:
+        return JSONResponse(
+            {"error": "DXF export needs the optional 'ezdxf' package (pip install ezdxf)."},
+            status_code=501,
+        )
+    stem = Path(model).stem or "flat"
+    return Response(
+        content=dxf,
+        media_type="application/dxf",
+        headers={"Content-Disposition": f'attachment; filename="{stem}-flat.dxf"'},
+    )
 
 
 def _sync() -> None:
