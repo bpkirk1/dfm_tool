@@ -155,6 +155,28 @@ formed-part bounding box.
 
 ## Changelog
 
+### 0.5.0 — optional geometry correction (CAD kernel)
+
+- New **optional** geometry-correction backend (`backend/app/geometry/`): applies
+  a Phase 3 fix file's `computed` corrections to a STEP model via cadquery/OCP and
+  writes a corrected `<name>_corrected_<ts>.stp`. The core tool is unchanged and
+  still runs/tests with **no CAD kernel installed** (lazy import, graceful
+  degradation like the pdfplumber extractor).
+- Conservative + self-verifying: only `computed` corrections are applied (advisory/
+  manual are skipped with a reason); a handler that can't safely edit the topology
+  skips with a reason; the corrected model is re-run through the same
+  `extract_step -> evaluate_family` pipeline and **rejected** (no download) if any
+  rule regressed. The input file is never modified.
+- Handlers (start narrow, registry-routed by fix-file `parameter`): inside bend/
+  fillet radius increase, and a hole-adjustment stub. Everything else →
+  `skipped: "no geometry handler for parameter X"`.
+- Wiring: `GET /api/geometry/status`, `POST /api/geometry/correct`, an "Attempt
+  automatic correction" button in the report's corrections section (shown only
+  when the kernel is available, with before/after readiness and a corrected-model
+  download served via `/api/model/{filename}`), and CLI `--apply-fixes fixes.json
+  --out corrected.stp`.
+- Install the extra with `pip install -r requirements-geometry.txt`.
+
 ### 0.4.0 — commentary generator
 
 - Deterministic engineering-commentary layer (`backend/app/commentary/`): turns

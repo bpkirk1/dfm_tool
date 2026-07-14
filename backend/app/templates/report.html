@@ -5,6 +5,7 @@
 {% set show_manual = true if show_manual is not defined else show_manual %}
 {% set show_strip = true if show_strip is not defined else show_strip %}
 {% set commentary = commentary if commentary is defined else [] %}
+{% set geometry_available = geometry_available if geometry_available is defined else false %}
 <div class="no-print mb-4 flex items-center justify-between">
   <a href="/" class="text-sm text-slate-300 hover:text-white">&larr; New check</a>
   <div class="flex items-center gap-2">
@@ -327,6 +328,20 @@
       Deterministic targets to bring each failing/at-risk finding into compliance
       (computed from the cited rule limit plus a safety margin &mdash; no AI, no guessing).
     </p>
+    {% if geometry_available and r.model_file %}
+    <div class="mt-3 flex items-center gap-3">
+      <button id="geo-correct-btn"
+        data-model="{{ r.model_file }}" data-family="{{ r.family }}"
+        class="text-sm px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-500">
+        Attempt automatic correction
+      </button>
+      <span class="text-xs text-slate-500">
+        Applies only <span class="font-semibold">computed</span> fixes via the CAD kernel,
+        re-validates, and rejects any result that regresses another rule.
+      </span>
+    </div>
+    <div id="geo-correct-result" class="mt-3 hidden text-sm"></div>
+    {% endif %}
     <div class="mt-3 overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead class="text-left text-xs text-sky-700">
@@ -470,5 +485,75 @@
     </dl>
   </section>
 </div>
+
+{% if geometry_available %}
+<script>
+(function () {
+  const btn = document.getElementById("geo-correct-btn");
+  const out = document.getElementById("geo-correct-result");
+  if (!btn) return;
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  btn.addEventListener("click", async () => {
+    const model = btn.dataset.model, family = btn.dataset.family;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Correcting…";
+    out.classList.remove("hidden");
+    out.innerHTML = '<span class="text-slate-500">Fetching fix file and applying computed corrections…</span>';
+    try {
+      const fixResp = await fetch(`/fixes.json?family=${encodeURIComponent(family)}&model=${encodeURIComponent(model)}`);
+      if (!fixResp.ok) throw new Error("could not load fix file");
+      const fixBlob = await fixResp.blob();
+      const fd = new FormData();
+      fd.append("fixes", new File([fixBlob], "fixes.json", { type: "application/json" }));
+      fd.append("model", model);
+      fd.append("family", family);
+      const resp = await fetch("/api/geometry/correct", { method: "POST", body: fd });
+      const data = await resp.json();
+      if (!resp.ok) { out.innerHTML = `<div class="text-red-700">${esc(data.error || "correction failed")}</div>`; return; }
+      renderResult(data);
+    } catch (e) {
+      out.innerHTML = `<div class="text-red-700">${esc(e.message || e)}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = original;
+    }
+  });
+
+  function renderResult(d) {
+    const badge = d.status === "applied"
+      ? '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold uppercase">applied</span>'
+      : d.status === "rejected"
+      ? '<span class="px-2 py-0.5 rounded bg-red-100 text-red-800 text-xs font-semibold uppercase">rejected</span>'
+      : '<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-xs font-semibold uppercase">no change</span>';
+    let html = `<div class="rounded-lg border border-slate-200 bg-white p-3">`;
+    html += `<div class="flex items-center gap-2">${badge}`;
+    if (d.score_before != null && d.score_after != null)
+      html += `<span class="text-xs text-slate-500">readiness ${esc(d.score_before)}% &rarr; <span class="font-semibold text-slate-800">${esc(d.score_after)}%</span></span>`;
+    html += `</div>`;
+    if (d.message) html += `<p class="text-xs text-slate-600 mt-1">${esc(d.message)}</p>`;
+    if (d.improved && d.improved.length)
+      html += `<p class="text-sm text-emerald-700 mt-2">Improved: ${d.improved.map(esc).join(", ")}</p>`;
+    if (d.regressed && d.regressed.length)
+      html += `<p class="text-sm text-red-700 mt-1">Regressed: ${d.regressed.map(esc).join(", ")}</p>`;
+    if (d.applied && d.applied.length) {
+      html += `<p class="text-xs font-semibold text-slate-700 mt-2">Applied edits</p><ul class="list-disc list-inside text-sm text-slate-700">`;
+      d.applied.forEach(a => { html += `<li>${esc(a.parameter)} (${esc(a.rule_id)}): ${esc(a.before)} &rarr; ${esc(a.after)} ${esc(a.unit || "")}</li>`; });
+      html += `</ul>`;
+    }
+    if (d.skipped && d.skipped.length) {
+      html += `<p class="text-xs font-semibold text-slate-700 mt-2">Skipped</p><ul class="list-disc list-inside text-sm text-slate-500">`;
+      d.skipped.forEach(s => { html += `<li>${esc(s.parameter)}: ${esc(s.reason)}</li>`; });
+      html += `</ul>`;
+    }
+    if (d.download_model)
+      html += `<div class="mt-3 flex gap-3"><a class="text-sm px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500" href="/api/model/${encodeURIComponent(d.download_model)}" download>Download corrected STEP</a></div>`;
+    html += `</div>`;
+    out.innerHTML = html;
+  }
+})();
+</script>
+{% endif %}
 {% endblock %}
 {% block about_extra %}&middot; ruleset <span class="font-mono text-slate-400">{{ r.ruleset_version }}</span> &middot; schema <span class="font-mono text-slate-400">{{ r.schema_version }}</span>{% endblock %}

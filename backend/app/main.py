@@ -6,6 +6,7 @@ later without touching the engine or API.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,8 @@ from .corrections import build_envelope, export_fixes_json, export_fixes_yaml
 from .diestrip import generate_strip_layout
 from .extractors import extract_step
 from .flatpattern import analyze_flat, render_dxf, render_png, render_svg
+from .geometry import apply_fixes
+from .geometry import kernel as geometry_kernel
 from .report import RunInputs, build_report, render_report_pdf
 from .store import CriteriaStore
 
@@ -386,6 +389,58 @@ def commentary_json(
     )
 
 
+# --- Phase 5: optional geometry correction -----------------------------------
+@app.get("/api/geometry/status")
+def geometry_status():
+    """Whether the optional CAD kernel is installed (drives the UI button)."""
+    return JSONResponse(geometry_kernel.status())
+
+
+@app.post("/api/geometry/correct")
+async def geometry_correct(
+    fixes: UploadFile = File(...),
+    step_file: UploadFile | None = File(None),
+    model: str = Form(""),
+    family: str = Form(""),
+):
+    """Apply a fix file's computed corrections to a STEP model and re-validate.
+
+    Accepts either an uploaded ``step_file`` or a ``model`` name referencing a
+    prior run's upload/example. Returns a CorrectionResult; the corrected model
+    (when accepted) is served via ``GET /api/model/{filename}``.
+    """
+    if not geometry_kernel.available:
+        return JSONResponse(
+            {"error": geometry_kernel.UNAVAILABLE_MESSAGE, **geometry_kernel.status()},
+            status_code=501,
+        )
+    # Resolve the source STEP: uploaded file wins, else a referenced model name.
+    src: Path | None = None
+    if step_file is not None and step_file.filename:
+        src = _save_upload(step_file)
+    elif model:
+        src = _locate_model(model)
+    if src is None:
+        return JSONResponse(
+            {"error": "Provide a STEP via 'step_file' upload or an existing 'model' name."},
+            status_code=400,
+        )
+    try:
+        fix_bytes = await fixes.read()
+        fix_file = json.loads(fix_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return JSONResponse({"error": f"Invalid fix file JSON: {exc}"}, status_code=400)
+
+    _sync()
+    result = apply_fixes(
+        src, fix_file, store=_store, family=family or None, out_dir=config.UPLOAD_DIR
+    )
+    payload = result.to_dict()
+    if result.output_path:
+        payload["download_model"] = Path(result.output_path).name
+    return JSONResponse(payload)
+
+
 def _sync() -> None:
     """Keep the store in step with the canonical YAML before each use."""
     if config.CRITERIA_SEED_PATH.exists():
@@ -493,6 +548,7 @@ async def evaluate(
     return _render(
         "report.html", r=report, show_manual=show_manual, show_strip=show_strip,
         commentary=[s.to_dict() for s in sections],
+        geometry_available=geometry_kernel.available,
     )
 
 
@@ -623,6 +679,7 @@ def evaluate_example(
     return _render(
         "report.html", r=report, show_manual=show_manual, show_strip=show_strip,
         commentary=[s.to_dict() for s in sections],
+        geometry_available=geometry_kernel.available,
     )
 
 

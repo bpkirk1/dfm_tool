@@ -1,0 +1,9 @@
+# Optional CAD-kernel extras for Phase 5 geometry correction.
+# The core tool runs and passes all tests WITHOUT these installed.
+#
+#   pip install -r requirements-geometry.txt
+#
+# cadquery wraps OCP (OpenCASCADE). Install can be heavy; prefer a clean venv
+# or conda. If import fails at runtime the app degrades gracefully and the
+# "Attempt automatic correction" UI stays hidden.
+cadquery>=2.4

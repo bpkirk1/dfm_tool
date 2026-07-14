@@ -16,6 +16,8 @@ from .commentary import (
 )
 from .corrections import build_envelope, export_fixes_json, export_fixes_yaml
 from .diestrip import generate_strip_layout
+from .geometry import apply_fixes as apply_geometry_fixes
+from .geometry import kernel as geometry_kernel
 from .extractors import extract_step
 from .report import RunInputs, build_report
 from .store import CriteriaStore
@@ -49,7 +51,21 @@ def main() -> int:
         metavar="OUT.md",
         help="Write the engineering commentary as Markdown (+ a sibling .json)",
     )
+    ap.add_argument(
+        "--apply-fixes",
+        metavar="FIXES.json",
+        dest="apply_fixes",
+        help="Apply a fix file's computed corrections to the STEP (needs CAD kernel)",
+    )
+    ap.add_argument(
+        "--out",
+        metavar="CORRECTED.stp",
+        help="Output path for --apply-fixes (default: alongside the input)",
+    )
     args = ap.parse_args()
+
+    if args.apply_fixes:
+        return _apply_fixes(args)
 
     store = CriteriaStore(config.DB_PATH)
     if config.CRITERIA_SEED_PATH.exists():
@@ -129,6 +145,50 @@ def main() -> int:
         print(f"  ({hidden_manual} manual-check item(s) hidden by --no-manual)")
     print()
     return 0
+
+
+def _apply_fixes(args) -> int:
+    if not geometry_kernel.available:
+        print(f"  {geometry_kernel.UNAVAILABLE_MESSAGE}")
+        return 2
+    if not args.step:
+        print("  --apply-fixes requires --step (the model to correct)")
+        return 2
+    store = CriteriaStore(config.DB_PATH)
+    if config.CRITERIA_SEED_PATH.exists():
+        store.sync_from_yaml(config.CRITERIA_SEED_PATH)
+
+    fix_file = json.loads(Path(args.apply_fixes).read_text(encoding="utf-8"))
+    out_path = Path(args.out) if args.out else Path(args.step).with_name(
+        Path(args.step).stem + "_corrected.stp"
+    )
+    result = apply_geometry_fixes(
+        args.step, fix_file, store=store, family=args.family,
+        out_dir=out_path.parent if out_path.parent.name else Path("."),
+    )
+
+    print(f"\nGeometry correction — {Path(args.step).name}")
+    print(f"  status   : {result.status}")
+    if result.message:
+        print(f"  note     : {result.message}")
+    for a in result.applied:
+        print(f"  applied  : {a['parameter']} ({a['rule_id']}) {a['before']} -> {a['after']} {a.get('unit','')}")
+    for s in result.skipped:
+        print(f"  skipped  : {s['parameter']} — {s['reason']}")
+    if result.improved:
+        print(f"  improved : {', '.join(result.improved)}")
+    if result.regressed:
+        print(f"  regressed: {', '.join(result.regressed)}")
+    if result.output_path:
+        final = Path(result.output_path)
+        if args.out and final != out_path:
+            final.replace(out_path)
+            final = out_path
+        print(f"  wrote    : {final}")
+    else:
+        print("  no corrected model written (rejected or no computed fixes).")
+    store.close()
+    return 0 if result.status in ("applied", "noop") else 1
 
 
 def _strip(store: CriteriaStore, args) -> int:
